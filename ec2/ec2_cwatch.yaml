@@ -1,0 +1,173 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Creates an EC2 instance (public SSH), a PostgreSQL RDS instance, an IAM Role and InstanceProfile
+  so the EC2 can access CloudWatch and request RDS metrics.
+
+Parameters:
+  VpcId:
+    Type: String
+    Description: VPC ID for resources (use your default VPC if unsure).
+    Default: vpc-038e67f635b7fa3dd
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: EC2 KeyPair for SSH access
+    Default: trantor_key
+  EC2InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: EC2 instance type
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: Amazon Linux 2 AMI
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    Description: RDS instance class
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+    Description: Allocated storage in GB for RDS
+  DBName:
+    Type: String
+    Default: operdb
+    Description: Initial database name
+  DBUsername:
+    Type: String
+    Default: elephant
+    Description: RDS master username
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Default: Tantor123!
+    Description: RDS master password (NoEcho)
+
+Resources:
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable public SSH to EC2
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow PostgreSQL from EC2 SG
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref EC2SecurityGroup
+
+  IAMRoleForEC2:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      Description: EC2 Role for CloudWatch and RDS metrics
+
+  EC2Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: EC2CloudWatchRDSReadPolicy
+      Roles:
+        - !Ref IAMRoleForEC2
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - cloudwatch:GetMetricData
+              - cloudwatch:GetMetricStatistics
+              - cloudwatch:ListMetrics
+              - cloudwatch:DescribeAlarms
+              - cloudwatch:PutMetricData
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - rds:DescribeDBInstances
+              - rds:ListTagsForResource
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: "arn:aws:logs:*:*:*"
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref IAMRoleForEC2
+      Path: /
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref EC2InstanceType
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      KeyName: !Ref KeyName
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          yum update -y
+          yum install -y aws-cli
+      Tags:
+        - Key: Name
+          Value: CFN-EC2-Instance
+
+  OperDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub "${AWS::StackName}-pg"
+      AllocatedStorage: !Ref DBAllocatedStorage
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: postgres
+      EngineVersion: "17.4"
+      DBName: !Ref DBName
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      PubliclyAccessible: true
+      Port: 5432
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      EnableIAMDatabaseAuthentication: true
+
+
+Outputs:
+  EC2InstanceId:
+    Description: EC2 Instance Id
+    Value: !Ref EC2Instance
+
+  EC2PublicIP:
+    Description: EC2 Public IP (for SSH)
+    Value: !GetAtt EC2Instance.PublicIp
+
+  RDSAddress:
+    Description: RDS Endpoint address
+    Value: !GetAtt OperDBInstance.Endpoint.Address
+
+  RDSPort:
+    Description: RDS Port
+    Value: !GetAtt OperDBInstance.Endpoint.Port
+
+  IAMRoleArn:
+    Description: IAM Role ARN for EC2
+    Value: !GetAtt IAMRoleForEC2.Arn

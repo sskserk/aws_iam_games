@@ -1,0 +1,1 @@
+aws cloudformation delete-stack --region eu-central-1  --stack-name  ec2-tantor-stack

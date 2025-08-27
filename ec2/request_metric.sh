@@ -1,0 +1,1 @@
+aws cloudwatch get-metric-statistics   --namespace AWS/RDS   --metric-name CPUUtilization   --dimensions Name=DBInstanceIdentifier,Value=ec2-tantor-stack-2-pg   --start-time 2025-08-27T18:00:00Z   --end-time 2025-08-27T22:00:00Z   --period 300   --statistics Average --region=eu-central-1
