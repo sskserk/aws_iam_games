@@ -1,0 +1,176 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "RDS PostgreSQL with CloudWatch logs streaming to S3 via Firehose, using an existing VPC"
+
+Parameters:
+  VpcId:
+    Type: String
+    Description: "The ID of the existing VPC where the RDS instance will be created"
+#E.g. Default: vpc-038e67f635b7fa3dd
+
+Resources:
+  # 1.
+  # S3 Bucket for Logs
+  LogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-logs-bucket"
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # RDS PostgreSQL Instance
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub "${AWS::StackName}-postgresql"
+      AllocatedStorage: 20
+      DBInstanceClass: db.t3.micro
+      Engine: postgres
+      MasterUsername: elephant
+      MasterUserPassword: password123
+      DBName: mydatabase
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 0
+      StorageType: gp2
+      EnableCloudwatchLogsExports:
+        - "postgresql"
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-rds"
+
+  # Security Group for RDS
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow RDS PostgreSQL Access"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0 # Open to all (adjust for production)
+      VpcId: !Ref VpcId
+
+  # IAM Role for Kinesis Firehose
+  FirehoseIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: FirehoseS3Policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource: !Sub "${LogsBucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                  - logs:PutLogEvents
+                  - logs:GetLogEvents
+                  - logs:DescribeLogStreams
+                  - logs:DescribeLogGroups
+                Resource: "*"
+
+  # IAM Policy for CloudWatch Logs to Firehose
+  FirehoseDeliveryIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: logs.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudWatchLogsToFirehosePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - firehose:PutRecord
+                  - firehose:PutRecordBatch
+                Resource: !Sub "arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${FirehoseDeliveryStream}"
+
+
+  # Kinesis Firehose Delivery Stream
+  FirehoseDeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamType: DirectPut
+      S3DestinationConfiguration:
+        BucketARN: !GetAtt LogsBucket.Arn
+        RoleARN: !GetAtt FirehoseIAMRole.Arn
+        Prefix: "logs/"
+        BufferingHints:
+          IntervalInSeconds: 300
+          SizeInMBs: 5
+        CompressionFormat: GZIP
+
+  # 2.
+  # CloudWatch Log Group for RDS PostgreSQL logs
+
+  CloudWatchLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/rds/instance/${AWS::StackName}-postgresql/postgresql"
+      RetentionInDays: 3
+
+  # IAM Role for CloudWatch Logs to assume and stream data to Firehose
+  CloudWatchToFirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: logs.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudWatchToFirehosePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - firehose:PutRecord
+                  - firehose:PutRecordBatch
+                Resource: !Sub "arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${FirehoseDeliveryStream}"
+
+  # CloudWatch Logs Subscription Filter to send logs to Firehose
+  CloudWatchLogsSubscriptionFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      LogGroupName: !Ref CloudWatchLogGroup
+      FilterPattern: "" # Sends all logs; adjust this to filter specific logs
+      DestinationArn: !Sub "arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${FirehoseDeliveryStream}"
+      RoleArn: !GetAtt CloudWatchToFirehoseRole.Arn
+
+Outputs:
+  RDSInstanceEndpoint:
+    Description: "RDS PostgreSQL Endpoint"
+    Value: !GetAtt RDSInstance.Endpoint.Address
+
+  LogsBucketName:
+    Description: "S3 Bucket Name for Logs"
+    Value: !Ref LogsBucket
+
+  FirehoseStreamName:
+    Description: "Kinesis Firehose Stream Name"
+    Value: !Ref FirehoseDeliveryStream
