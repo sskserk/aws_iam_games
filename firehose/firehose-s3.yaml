@@ -5,7 +5,7 @@ Parameters:
   VpcId:
     Type: String
     Description: "The ID of the existing VPC where the RDS instance will be created"
-#E.g. Default: vpc-038e67f635b7fa3dd
+    Default: vpc-038e67f635b7fa3dd
 
 Resources:
   # 1.
@@ -36,6 +36,7 @@ Resources:
       PubliclyAccessible: false
       BackupRetentionPeriod: 0
       StorageType: gp2
+      Port: 5431
       EnableCloudwatchLogsExports:
         - "postgresql"
       VPCSecurityGroups:
@@ -51,8 +52,8 @@ Resources:
       GroupDescription: "Allow RDS PostgreSQL Access"
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 5432
-          ToPort: 5432
+          FromPort: 5431
+          ToPort: 5431
           CidrIp: 0.0.0.0/0 # Open to all (adjust for production)
       VpcId: !Ref VpcId
 
@@ -116,7 +117,7 @@ Resources:
       S3DestinationConfiguration:
         BucketARN: !GetAtt LogsBucket.Arn
         RoleARN: !GetAtt FirehoseIAMRole.Arn
-        Prefix: "logs/"
+        Prefix: !Sub "${AWS::StackName}-postgresql/${RDSInstance.Port}/"
         BufferingHints:
           IntervalInSeconds: 300
           SizeInMBs: 5
