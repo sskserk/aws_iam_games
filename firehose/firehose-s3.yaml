@@ -119,9 +119,10 @@ Resources:
         RoleARN: !GetAtt FirehoseIAMRole.Arn
         Prefix: !Sub "${AWS::StackName}-postgresql/${RDSInstance.Port}/"
         BufferingHints:
-          IntervalInSeconds: 300
-          SizeInMBs: 5
+          IntervalInSeconds: 60
+          SizeInMBs: 1
         CompressionFormat: GZIP
+
 
   # 2.
   # CloudWatch Log Group for RDS PostgreSQL logs
