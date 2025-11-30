@@ -24,7 +24,7 @@ Parameters:
 
   EC2InstanceType:
     Type: String
-    Default: t3.micro
+    Default: t3.large
     Description: EC2 instance type
   PlatformKeyName:
     Type: String
@@ -284,23 +284,22 @@ Resources:
       LogGroupName: !Sub "/aws/rds/instance/${AWS::StackName}-postgresql/postgresql"
       RetentionInDays: 3
 
-
-
   # Logs to Firehose
   ## S3 Bucket for Logs
   LogsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${AWS::StackName}-logs-bucket"
+      BucketName: !Sub "${AWS::StackName}-logs-bucket-${AWS::AccountId}-${AWS::Region}"
       VersioningConfiguration:
-        Status: Enabled
+        Status: Suspended
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
 
-  #@ IAM Role for Kinesis Firehose
+
+  # IAM Role for Kinesis Firehose
   FirehoseIAMRole:
     Type: AWS::IAM::Role
     Properties:
@@ -379,6 +378,14 @@ Outputs:
   EC2InstanceId:
     Description: EC2 Instance Id
     Value: !Ref EC2Instance
+
+  EC2Hostname:
+    Description: EC2 Public DNS (for SSH)
+    Value: !GetAtt EC2Instance.PublicDnsName
+
+  EC2User:
+    Description: EC2 SSH Username
+    Value: ubuntu
 
   EC2PublicIP:
     Description: EC2 Public IP (for SSH)

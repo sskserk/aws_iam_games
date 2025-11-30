@@ -1,0 +1,95 @@
+Assume Role Policy Document для EC2 роли для сбора метрик CloudWatch и описания RDS инстансов:
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+
+Policy привязанный к роли EC2 для сбора метрик CloudWatch и описания RDS инстансов:
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": [
+                "cloudwatch:GetMetricData",
+                "cloudwatch:GetMetricStatistics",
+                "cloudwatch:ListMetrics",
+                "cloudwatch:DescribeAlarms"
+            ],
+            "Resource": "*",
+            "Effect": "Allow",
+            "Condition": {
+                "StringEquals": {
+                    "cloudwatch:namespace": "AWS/RDS"
+                }
+            }
+        },
+        {
+            "Action": [
+                "rds:DescribeDBInstances",
+                "rds:ListTagsForResource"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        }
+    ]
+}
+
+
+===============================================
+Отправка CloudWatch логи в FireHose:
+
+Параметры:
+- Код FireHose стрима: logging-tantor-stack26-FirehoseDeliveryStream-pvJ8LqjFslaN
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": [
+                "firehose:PutRecord",
+                "firehose:PutRecordBatch"
+            ],
+            "Resource": "arn:aws:firehose:eu-central-1:067416960388:deliverystream/logging-tantor-stack26-FirehoseDeliveryStream-pvJ8LqjFslaN",
+            "Effect": "Allow"
+        }
+    ]
+}
+
+Где код стрима: logging-tantor-stack26-FirehoseDeliveryStream-pvJ8LqjFslaN
+
+
+===============================================
+
+FireHose запись в S3:
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": [
+                "s3:PutObject",
+                "s3:PutObjectAcl"
+            ],
+            "Resource": "arn:aws:s3:::logging-tantor-stack26-logs-bucket/*",
+            "Effect": "Allow"
+        }
+    ]
+}
+где код бакета: logging-tantor-stack26-logs-bucket
+
+
+ aws --profile al --region us-east-1 s3api delete-objects --bucket cfn-platform-logs-bucket-361226442924-us-east-1 \
+--delete "$(aws --profile al --region us-east-1 s3api list-object-versions --bucket cfn-platform-logs-bucket-361226442924-us-east-1 --query='{Objects: Versions[].{Key:Key,VersionId:VersionId}}')"
+
+aws --profile al --region us-east-1 s3api delete-objects --bucket cfn-platform-logs-bucket-361226442924-us-east-1 \
+--delete "$(aws --profile al --region us-east-1 s3api list-object-versions --bucket cfn-platform-logs-bucket-361226442924-us-east-1 --query='{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}')"
