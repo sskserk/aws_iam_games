@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  Creates an EC2 instance (public SSH), a PostgreSQL RDS instance, an IAM Role and InstanceProfile
-  so the EC2 can access CloudWatch and request RDS metrics.
+  Creates an EC2 instance, a PostgreSQL RDS instance, an IAM Role and InstanceProfile
+  so the EC2 can access CloudWatch and request RDS metrics, Firehose streams, S3 bucket used to store logs.
 
 Parameters:
   VpcCidr:
@@ -20,8 +20,6 @@ Parameters:
     Type: String
     Default: 10.0.3.0/24
     Description: CIDR block for subnet 3
-
-
   EC2InstanceType:
     Type: String
     Default: t3.large
@@ -38,14 +36,6 @@ Parameters:
     Type: String
     Default: db.t3.micro
     Description: RDS instance class
-  DBAllocatedStorage:
-    Type: Number
-    Default: 20
-    Description: Allocated storage in GB for RDS
-  DBName:
-    Type: String
-    Default: operdb
-    Description: Initial database name
   DBUsername:
     Type: String
     Default: elephant
@@ -57,9 +47,7 @@ Parameters:
     Description: RDS master password (NoEcho)
 
 Resources:
-
   # VPC and Networking Resources
-
   VPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -171,7 +159,6 @@ Resources:
           CidrIp: 0.0.0.0/0  
 
   # EC2
-
   IAMRoleForEC2:
     Type: AWS::IAM::Role
     Properties:
@@ -231,28 +218,33 @@ Resources:
         - !Ref VpcSecurityGroup
       IamInstanceProfile: !Ref EC2InstanceProfile
       SubnetId: !Ref SubnetA
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 30  # Size in GB
+            VolumeType: gp3  # Options: gp2, gp3, io1, io2, st1, sc1
+            DeleteOnTermination: true
+            Encrypted: false
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash -xe
-          yum update -y
-          yum install -y aws-cli
+          apt update -y
       Tags:
         - Key: Name
           Value: CFN-EC2-Instance
 
   # RDS
-
   MonitoredDBInstance:
     Type: AWS::RDS::DBInstance
     DependsOn: CloudWatchLogGroup
     Properties:
       DBInstanceIdentifier: !Sub "${AWS::StackName}-postgresql"
-      AllocatedStorage: !Ref DBAllocatedStorage
+      AllocatedStorage: 10
       DBInstanceClass: !Ref DBInstanceClass
       Engine: postgres
       EngineVersion: "17.4"
       DBSubnetGroupName: !Ref DBSubnetGroup
-      DBName: !Ref DBName
+      DBName: elephantdb
       BackupRetentionPeriod: 0
       VPCSecurityGroups:
         - !Ref VpcSecurityGroup
@@ -297,7 +289,6 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
-
 
   # IAM Role for Kinesis Firehose
   FirehoseIAMRole:
@@ -364,7 +355,6 @@ Resources:
           SizeInMBs: 1
         CompressionFormat: UNCOMPRESSED
 
-
   # CloudWatch Logs Subscription Filter to send logs to Firehose
   CloudWatchLogsSubscriptionFilter:
     Type: AWS::Logs::SubscriptionFilter
@@ -375,10 +365,6 @@ Resources:
       RoleArn: !GetAtt CloudWatchToFirehoseRole.Arn
 
 Outputs:
-  EC2InstanceId:
-    Description: EC2 Instance Id
-    Value: !Ref EC2Instance
-
   EC2Hostname:
     Description: EC2 Public DNS (for SSH)
     Value: !GetAtt EC2Instance.PublicDnsName
