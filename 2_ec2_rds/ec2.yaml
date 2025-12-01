@@ -193,12 +193,20 @@ Resources:
             Action:
               - rds:DescribeDBInstances
               - rds:ListTagsForResource
+              - rds:DescribeDBParameters
+              - rds:DescribeDBLogFiles
+              - rds:ModifyDBParameterGroup
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - ec2:DescribeInstanceTypes
             Resource: "*"
           - Effect: Allow
             Action:
               - logs:CreateLogGroup
               - logs:CreateLogStream
-              - logs:PutLogEvents
+              - logs:GetLogEvents
+#              - logs:PutLogEvents
             Resource: "arn:aws:logs:*:*:*"
 
   EC2InstanceProfile:
@@ -233,6 +241,22 @@ Resources:
         - Key: Name
           Value: CFN-EC2-Instance
 
+  RDSMonitoringRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: monitoring.rds.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      # Attach the AWS managed policy that grants the permissions RDS needs to publish OS metrics to CloudWatch Logs
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
+
+
   # RDS
   MonitoredDBInstance:
     Type: AWS::RDS::DBInstance
@@ -246,6 +270,8 @@ Resources:
       DBSubnetGroupName: !Ref DBSubnetGroup
       DBName: elephantdb
       BackupRetentionPeriod: 0
+      MonitoringInterval: 60
+      MonitoringRoleArn: !GetAtt RDSMonitoringRole.Arn
       VPCSecurityGroups:
         - !Ref VpcSecurityGroup
       Port: 5432
@@ -254,6 +280,26 @@ Resources:
       EnableIAMDatabaseAuthentication: true
       EnableCloudwatchLogsExports:
         - postgresql
+      DBParameterGroupName: !Ref DBParameterGroup
+
+  DBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      DBParameterGroupName: !Sub "${AWS::StackName}-pg-params"
+      Description: PostgreSQL parameter group for enhanced logging
+      Family: postgres17
+      Parameters:
+        log_statement: "all"
+        log_min_duration_statement: "1000"
+        log_connections: "1"
+        log_disconnections: "1"
+        log_duration: "1"
+        log_hostname: "1"
+        log_line_prefix: "%t:%r:%u@%d:[%p]:"
+        log_error_verbosity: "default"
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-postgresql-174-db-params
 
   DBSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup

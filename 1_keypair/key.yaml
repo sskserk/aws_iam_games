@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Create or import an EC2 KeyPair
+Parameters:
+  KeyName:
+    Type: String
+    Description: Name for the EC2 KeyPair
+    Default: tantor-keypair
+  PublicKeyMaterial:
+    Type: String
+    Description: >
+      Optional OpenSSH-format public key to import. Leave empty to have CloudFormation
+      generate a key pair for you and return the private key material (only at creation).
+    Default: ''
+Conditions:
+  HasPublicKey: !Not [ !Equals [ !Ref PublicKeyMaterial, '' ] ]
+Resources:
+  ImportedKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Ref KeyName
+      KeyType: ed25519
+      PublicKeyMaterial: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOm0qWAuPzJiU8QTUTW5aRvautUqYL0A+mdPYYTHLiYe earth@milkyway
+
+Outputs:
+  KeyName:
+    Description: The KeyPair name
+    Value: !Ref ImportedKeyPair
+
+  KeyPairId:
+    Description: The KeyPair resource id
+    Value: !GetAtt ImportedKeyPair.KeyPairId
+
