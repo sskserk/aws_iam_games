@@ -206,7 +206,6 @@ Resources:
               - logs:CreateLogGroup
               - logs:CreateLogStream
               - logs:GetLogEvents
-#              - logs:PutLogEvents
             Resource: "arn:aws:logs:*:*:*"
 
   EC2InstanceProfile:
@@ -230,7 +229,7 @@ Resources:
         - DeviceName: /dev/sda1
           Ebs:
             VolumeSize: 30  # Size in GB
-            VolumeType: gp3  # Options: gp2, gp3, io1, io2, st1, sc1
+            VolumeType: gp3
             DeleteOnTermination: true
             Encrypted: false
       UserData:
@@ -256,8 +255,6 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
 
-
-  # RDS
   MonitoredDBInstance:
     Type: AWS::RDS::DBInstance
     DependsOn: CloudWatchLogGroup
@@ -315,7 +312,6 @@ Resources:
           Value: !Sub ${AWS::StackName}-db-subnet-group
 
   # CloudWatch Log Group for RDS PostgreSQL logs
-
   CloudWatchLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
