@@ -331,6 +331,18 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+        - Id: "ExpireCurrentObjectsAfter1Day"
+          Status: "Enabled"
+          ExpirationInDays: 1
+        - Id: "ExpireOldVersionsAfter1Day"
+          Status: "Enabled"
+          NoncurrentVersionExpirationInDays: 1
+        - Id: "AbortMultipartAfter1Day"
+          Status: "Enabled"
+          AbortIncompleteMultipartUpload:
+            DaysAfterInitiation: 1
 
   # IAM Role for Kinesis Firehose
   FirehoseIAMRole:
