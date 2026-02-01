@@ -30,8 +30,8 @@ Parameters:
     Default: tantor-keypair
   AmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id
-    Description: Ubuntu
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: Amazon Linux
   DBInstanceClass:
     Type: String
     Default: db.t3.micro
@@ -228,14 +228,40 @@ Resources:
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
           Ebs:
-            VolumeSize: 30  # Size in GB
+            VolumeSize: 50  # Size in GB
             VolumeType: gp3
             DeleteOnTermination: true
             Encrypted: false
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash -xe
-          apt update -y
+          yum update -y
+
+          yum install docker -y
+          systemctl enable docker
+          systemctl start docker
+
+          # Create a new user
+          useradd -m -s /bin/bash awideapp
+          
+          # Set password for the user (optional)
+          echo "awideapp:L9q!vC3z#T7p@wX2" | chpasswd
+          
+          # Add user to sudo group
+          usermod -aG wheel awideapp
+          
+          # For Ubuntu, use this instead:
+          # usermod -aG sudo awideapp
+          
+          # Allow passwordless sudo (optional)
+          echo "awideapp ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/awideapp
+          chmod 440 /etc/sudoers.d/awideapp
+
+          # Set environment variables for the awideapp user
+          cat >> /home/awideapp/.bash_profile <<'EOF'
+          export S3_LOGS_BUCKET_NAME=${LogsBucket}
+          export S3_LOGS_BUCKET_ARN=${LogsBucket.Arn}
+          EOF
       Tags:
         - Key: Name
           Value: CFN-EC2-Instance
