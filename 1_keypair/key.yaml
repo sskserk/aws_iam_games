@@ -5,7 +5,7 @@ Parameters:
   KeyName:
     Type: String
     Description: Name for the EC2 KeyPair
-    Default: tantor-keypair
+    Default: sk-keypair
   PublicKeyMaterial:
     Type: String
     Description: >

@@ -6,7 +6,7 @@ Description: >
 Parameters:
   VpcCidr:
     Type: String
-    Default: 10.0.0.0/16
+    Default: 10.0.0.0/20
     Description: CIDR block for the VPC
   Subnet1Cidr:
     Type: String
@@ -24,14 +24,10 @@ Parameters:
     Type: String
     Default: t3.large
     Description: EC2 instance type
-  PlatformKeyName:
-    Type: String
-    Description: EC2 KeyPair for SSH access
-    Default: tantor-keypair
   AmiId:
-    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-    Description: Amazon Linux
+    Type: AWS::EC2::Image::Id
+    Default: "ami-0b8f6d1106292e4ce"
+    Description: Amazon Linux 2023
   DBInstanceClass:
     Type: String
     Default: db.t3.micro
@@ -218,7 +214,6 @@ Resources:
   EC2Instance:
     Type: AWS::EC2::Instance
     Properties:
-      KeyName: !Ref PlatformKeyName
       ImageId: !Ref AmiId
       InstanceType: !Ref EC2InstanceType
       SecurityGroupIds:
@@ -235,32 +230,15 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash -xe
-          yum update -y
+          dnf update -y
 
-          yum install docker -y
-          systemctl enable docker
-          systemctl start docker
-
-          # Create a new user
-          useradd -m -s /bin/bash awideapp
-          
-          # Set password for the user (optional)
-          echo "awideapp:L9q!vC3z#T7p@wX2" | chpasswd
-          
-          # Add user to sudo group
-          usermod -aG wheel awideapp
-          
-          # For Ubuntu, use this instead:
-          # usermod -aG sudo awideapp
-          
-          # Allow passwordless sudo (optional)
-          echo "awideapp ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/awideapp
-          chmod 440 /etc/sudoers.d/awideapp
+          usermod -L ec2-user || true
 
           # Set environment variables for the awideapp user
           cat >> /home/awideapp/.bash_profile <<'EOF'
           export S3_LOGS_BUCKET_NAME=${LogsBucket}
           export S3_LOGS_BUCKET_ARN=${LogsBucket.Arn}
+          export AWS_REGION=${AWS::Region}
           EOF
       Tags:
         - Key: Name
@@ -284,6 +262,7 @@ Resources:
   MonitoredDBInstance:
     Type: AWS::RDS::DBInstance
     DependsOn: CloudWatchLogGroup
+    DeletionPolicy: Delete
     Properties:
       DBInstanceIdentifier: !Sub "${AWS::StackName}-postgresql"
       AllocatedStorage: 10
@@ -307,6 +286,7 @@ Resources:
 
   DBParameterGroup:
     Type: AWS::RDS::DBParameterGroup
+    DeletionPolicy: Delete
     Properties:
       DBParameterGroupName: !Sub "${AWS::StackName}-pg-params"
       Description: PostgreSQL parameter group for enhanced logging
@@ -348,6 +328,7 @@ Resources:
   ## S3 Bucket for Logs
   LogsBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
     Properties:
       BucketName: !Sub "${AWS::StackName}-logs-bucket-${AWS::AccountId}-${AWS::Region}"
       VersioningConfiguration:
