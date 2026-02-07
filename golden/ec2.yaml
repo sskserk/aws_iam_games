@@ -1,0 +1,721 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Creates an EC2 instance, a PostgreSQL RDS instance, an IAM Role and InstanceProfile
+  so the EC2 can access CloudWatch and request RDS metrics, Firehose streams, S3 bucket used to store logs.
+
+Parameters:
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/20
+    Description: CIDR block for the VPC
+  Subnet1Cidr:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: CIDR block for subnet 1
+  Subnet2Cidr:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: CIDR block for subnet 2
+  Subnet3Cidr:
+    Type: String
+    Default: 10.0.3.0/24
+    Description: CIDR block for subnet 3
+  EC2InstanceType:
+    Type: String
+    Default: t3.large
+    Description: EC2 instance type
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Amazon Linux 2023
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    Description: RDS instance class
+  DBUsername:
+    Type: String
+    Default: elephant
+    Description: RDS master username
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Default: elephant123!
+    Description: RDS master password (NoEcho)
+
+Resources:
+  # VPC and Networking Resources
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-vpc
+        - Key: Purpose
+          Value: "CFN Platform VPC"
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-igw
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-rtb
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  ## subnets
+  SubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref Subnet1Cidr
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-subnet-a
+
+  SubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref Subnet2Cidr
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-subnet-b
+
+  SubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref Subnet3Cidr
+      AvailabilityZone: !Select [ 2, !GetAZs '' ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-subnet-c
+
+  SubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetA
+      RouteTableId: !Ref RouteTable
+
+  SubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetB
+      RouteTableId: !Ref RouteTable
+
+  SubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetC
+      RouteTableId: !Ref RouteTable
+
+  VpcSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${AWS::StackName}-security-group
+      GroupDescription: CFN Platform security group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0  
+
+  # EC2
+  IAMRoleForEC2:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      Description: EC2 Role for CloudWatch and RDS metrics
+
+  EC2Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: EC2CloudWatchRDSReadPolicy
+      Roles:
+        - !Ref IAMRoleForEC2
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - cloudwatch:GetMetricData
+              - cloudwatch:GetMetricStatistics
+              - cloudwatch:ListMetrics
+              - cloudwatch:DescribeAlarms
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - rds:DescribeDBInstances
+              - rds:ListTagsForResource
+              - rds:DescribeDBParameters
+              - rds:DescribeDBLogFiles
+              - rds:ModifyDBParameterGroup
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - ec2:DescribeInstanceTypes
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:GetLogEvents
+            Resource: "arn:aws:logs:*:*:*"
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref IAMRoleForEC2
+      Path: /
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          files:
+            /root/tools/setup_db_mount.sh:
+              mode: "000755"
+              owner: root
+              group: root
+              content: |
+                #!/bin/bash
+
+                # Idempotent disk setup script:
+                # - Ensures DEVICE has an ext4 filesystem (creates it only when needed).
+                # - Ensures MOUNT_POINT has a stable /etc/fstab entry by UUID.
+                # - Ensures the filesystem is mounted on MOUNT_POINT.
+                #
+                # Usage:
+                #   sudo ./setup_disk.sh [--dry-run] [--force]
+                #
+                # Flags:
+                #   --dry-run  Print actions without changing the system.
+                #   --force    Allow destructive mkfs when an existing filesystem is not ext4.
+
+                set -euo pipefail
+
+                DEVICE="/dev/sda1"
+                MOUNT_POINT="/var/lib/awidedbdata"
+
+                DRY_RUN=false
+                FORCE=false
+
+                for arg in "$@"; do
+                  case "$arg" in
+                    --dry-run) DRY_RUN=true ;;
+                    --force)   FORCE=true ;;
+                    *)
+                      echo "Error: Unknown argument: $arg" >&2
+                      echo "Usage: sudo $0 [--dry-run] [--force]" >&2
+                      exit 1
+                      ;;
+                  esac
+                done
+
+                run() {
+                  if [[ "$DRY_RUN" == true ]]; then
+                    echo "[DRY RUN] $*"
+                  else
+                    "$@"
+                  fi
+                }
+
+                backup_file_once() {
+                  local src="$1"
+                  local ts
+                  ts=$(date +%Y%m%d_%H%M%S)
+                  run cp "$src" "${src}.backup.${ts}"
+                  echo "Backup created: ${src}.backup.${ts}"
+                }
+
+                is_mountpoint() {
+                  # True only if PATH is an actual mount point.
+                  local p="$1"
+                  if command -v mountpoint >/dev/null 2>&1; then
+                    mountpoint -q "$p"
+                  else
+                    # Fallback: compare the nearest mount target with the path itself.
+                    local t
+                    t=$(findmnt -n -o TARGET --target "$p" 2>/dev/null || true)
+                    [[ "$t" == "$p" ]]
+                  fi
+                }
+
+                if [[ "$DRY_RUN" == true ]]; then
+                  echo "*** DRY RUN MODE - No changes will be made ***"
+                  echo ""
+                fi
+
+                if [[ $EUID -ne 0 ]] && [[ "$DRY_RUN" == false ]]; then
+                  echo "Error: This script must be run as root (use sudo)" >&2
+                  exit 1
+                fi
+
+                echo "=== Disk Setup Script (Idempotent) ==="
+                echo "Device: $DEVICE"
+                echo "Mount Point: $MOUNT_POINT"
+                echo "Dry-run: $DRY_RUN"
+                echo "Force: $FORCE"
+                echo ""
+
+                echo "Step 1: Resolving device name..."
+                if [[ "$DRY_RUN" == true ]]; then
+                  echo "[DRY RUN] readlink -f $DEVICE"
+                  REAL_DEVICE="$DEVICE"
+                else
+                  REAL_DEVICE=$(readlink -f "$DEVICE")
+                fi
+                echo "Real device: $REAL_DEVICE"
+                echo ""
+
+                echo "Step 2: Ensuring mount point directory exists..."
+                run mkdir -p "$MOUNT_POINT"
+                echo "Mount point directory ready: $MOUNT_POINT"
+                echo ""
+
+                # Step 3: Check whether MOUNT_POINT is a real mount point.
+                # Important: findmnt --target shows the backing filesystem even if there is no dedicated mount.
+                # Therefore we must use mountpoint semantics here.
+                echo "Step 3: Checking whether $MOUNT_POINT is already a mount point..."
+                if [[ "$DRY_RUN" == true ]]; then
+                  echo "[DRY RUN] mountpoint -q $MOUNT_POINT"
+                  echo "[DRY RUN] If it is a mount point, would compare mounted UUID with device UUID."
+                  echo ""
+                else
+                  if is_mountpoint "$MOUNT_POINT"; then
+                    MOUNTED_UUID=$(findmnt -n -o UUID --target "$MOUNT_POINT" 2>/dev/null || true)
+                    MOUNTED_SRC=$(findmnt -n -o SOURCE --target "$MOUNT_POINT" 2>/dev/null || true)
+                    echo "Already mounted: source=$MOUNTED_SRC uuid=$MOUNTED_UUID"
+
+                    DEVICE_UUID=$(blkid -s UUID -o value "$REAL_DEVICE" 2>/dev/null || true)
+
+                    if [[ -n "$DEVICE_UUID" && -n "$MOUNTED_UUID" && "$DEVICE_UUID" == "$MOUNTED_UUID" ]]; then
+                      echo "Mount point is already mounted with the expected UUID. No remount needed."
+                    else
+                      echo "Error: $MOUNT_POINT is mounted from a different filesystem." >&2
+                      echo "Mounted: source=$MOUNTED_SRC uuid=$MOUNTED_UUID" >&2
+                      echo "Target device: $REAL_DEVICE uuid=${DEVICE_UUID:-<none>}" >&2
+                      echo "Refusing to modify /etc/fstab or remount." >&2
+                      exit 1
+                    fi
+                  else
+                    echo "Not a mount point yet."
+                  fi
+                  echo ""
+                fi
+
+                echo "Step 4: Detecting filesystem type on $REAL_DEVICE..."
+                FS_TYPE=""
+                if [[ "$DRY_RUN" == true ]]; then
+                  echo "[DRY RUN] blkid -o value -s TYPE $REAL_DEVICE"
+                  FS_TYPE=""
+                  echo "Filesystem type (simulated): <none>"
+                else
+                  FS_TYPE=$(blkid -o value -s TYPE "$REAL_DEVICE" 2>/dev/null || true)
+                  echo "Filesystem type: ${FS_TYPE:-<none>}"
+                fi
+                echo ""
+
+                echo "Step 5: Ensuring ext4 filesystem..."
+                if [[ -z "$FS_TYPE" ]]; then
+                  echo "No filesystem detected. Creating ext4 on $REAL_DEVICE."
+                  run mkfs.ext4 -F "$REAL_DEVICE"
+                  echo "ext4 filesystem created."
+                elif [[ "$FS_TYPE" == "ext4" ]]; then
+                  echo "ext4 filesystem already present. Skipping mkfs."
+                else
+                  echo "Existing filesystem is '$FS_TYPE' (not ext4)."
+                  if [[ "$FORCE" == true ]]; then
+                    echo "--force provided. Recreating filesystem as ext4 (DESTRUCTIVE)."
+                    run mkfs.ext4 -F "$REAL_DEVICE"
+                    echo "ext4 filesystem created."
+                  else
+                    echo "Error: Refusing to format. Re-run with --force to overwrite '$FS_TYPE' with ext4." >&2
+                    exit 1
+                  fi
+                fi
+                echo ""
+
+                echo "Step 6: Getting UUID for $REAL_DEVICE..."
+                if [[ "$DRY_RUN" == true ]]; then
+                  echo "[DRY RUN] blkid -s UUID -o value $REAL_DEVICE"
+                  UUID="12345678-1234-1234-1234-123456789abc"
+                  echo "UUID (simulated): $UUID"
+                else
+                  sleep 1
+                  UUID=$(blkid -s UUID -o value "$REAL_DEVICE" 2>/dev/null || true)
+                  if [[ -z "$UUID" ]]; then
+                    echo "Error: Could not retrieve UUID for $REAL_DEVICE" >&2
+                    exit 1
+                  fi
+                  echo "UUID: $UUID"
+                fi
+                echo ""
+
+                echo "Step 7: Ensuring persistent mount in /etc/fstab..."
+                FSTAB_FILE="/etc/fstab"
+                FSTAB_ENTRY="UUID=$UUID $MOUNT_POINT ext4 defaults 0 2"
+
+                if [[ "$DRY_RUN" == true ]]; then
+                  echo "[DRY RUN] Ensure fstab has: $FSTAB_ENTRY"
+                else
+                  if awk -v mp="$MOUNT_POINT" '($1 !~ /^#/ && $2 == mp) {found=1} END{exit found?0:1}' "$FSTAB_FILE"; then
+                    CURRENT_LINE=$(awk -v mp="$MOUNT_POINT" '($1 !~ /^#/ && $2 == mp) {print; exit}' "$FSTAB_FILE")
+                    if [[ "$CURRENT_LINE" == "$FSTAB_ENTRY" ]]; then
+                      echo "fstab entry already correct. Skipping modification."
+                    else
+                      backup_file_once "$FSTAB_FILE"
+                      awk -v mp="$MOUNT_POINT" -v repl="$FSTAB_ENTRY" '
+                        {
+                          if ($0 ~ /^#/) { print $0; next }
+                          if ($2 == mp) { print repl; next }
+                          print $0
+                        }' "$FSTAB_FILE" > "${FSTAB_FILE}.tmp"
+                      mv "${FSTAB_FILE}.tmp" "$FSTAB_FILE"
+                      echo "Updated fstab entry for: $MOUNT_POINT"
+                    fi
+                  else
+                    backup_file_once "$FSTAB_FILE"
+                    echo "$FSTAB_ENTRY" >> "$FSTAB_FILE"
+                    echo "Added fstab entry: $FSTAB_ENTRY"
+                  fi
+                fi
+                echo ""
+
+                echo "Step 8: Ensuring the filesystem is mounted on $MOUNT_POINT..."
+                if [[ "$DRY_RUN" == true ]]; then
+                  echo "[DRY RUN] If not a mount point, would run: mount $MOUNT_POINT"
+                else
+                  if is_mountpoint "$MOUNT_POINT"; then
+                    echo "Already mounted. Nothing to do."
+                  else
+                    # Prefer mounting via fstab.
+                    mount "$MOUNT_POINT" 2>/dev/null || mount "$REAL_DEVICE" "$MOUNT_POINT"
+                    echo "Mounted: $REAL_DEVICE -> $MOUNT_POINT"
+                  fi
+                fi
+                echo ""
+
+                echo "=== Verification ==="
+                if [[ "$DRY_RUN" == true ]]; then
+                  echo "[DRY RUN] df -h $MOUNT_POINT"
+                  echo "[DRY RUN] grep -n -- \" $MOUNT_POINT \" /etc/fstab"
+                else
+                  df -h "$MOUNT_POINT" || true
+                  echo ""
+                  grep -n -- " $MOUNT_POINT " /etc/fstab || true
+                fi
+                echo ""
+                echo "=== Setup Complete ==="
+
+
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref EC2InstanceType
+      SecurityGroupIds:
+        - !Ref VpcSecurityGroup
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      SubnetId: !Ref SubnetA
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 50  # Size in GB
+            VolumeType: gp3
+            Iops: 10000
+            DeleteOnTermination: true
+            Encrypted: false
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          dnf update -y
+
+          # Ensure CloudFormation helper scripts are available and run cfn-init
+          dnf install -y aws-cfn-bootstrap || true
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource EC2Instance --region ${AWS::Region} || true
+
+          usermod -L ec2-user || true
+          dnf install docker -y
+          systemctl enable --now docker
+          systemctl start docker
+
+          /root/tools/setup_db_mount.sh --force > /var/log/db_mount_setup.log 2>&1 || true
+
+          curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /tmp/docker-compose
+          mv /tmp/docker-compose /usr/bin
+          chmod +x /usr/bin/docker-compose
+
+          # Create a new user
+          useradd -m -s /bin/bash awideapp
+          
+          # Set password for the user (optional)
+          echo "awideapp:L9q!vC3z#T7p@wX2" | chpasswd
+          
+          # Add user to sudo group
+          usermod -aG wheel awideapp
+          
+          # For Ubuntu, use this instead:
+          # usermod -aG sudo awideapp
+          
+          # Allow passwordless sudo (optional)
+          echo "awideapp ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/awideapp
+          chmod 440 /etc/sudoers.d/awideapp
+
+          # Set environment variables for the awideapp user
+          cat >> /home/awideapp/.bash_profile <<'EOF'
+          export S3_LOGS_BUCKET_NAME=${LogsBucket}
+          export S3_LOGS_BUCKET_ARN=${LogsBucket.Arn}
+          export AWS_REGION=${AWS::Region}
+          EOF
+      Tags:
+        - Key: Name
+          Value: !Sub "AWIDE-EC2-Instance-${AWS::StackName}"
+
+  RDSMonitoringRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: monitoring.rds.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      # Attach the AWS managed policy that grants the permissions RDS needs to publish OS metrics to CloudWatch Logs
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
+
+  MonitoredDBInstance:
+    Type: AWS::RDS::DBInstance
+    DependsOn: CloudWatchLogGroup
+    DeletionPolicy: Delete
+    Properties:
+      DBInstanceIdentifier: !Sub "${AWS::StackName}-postgresql"
+      AllocatedStorage: 10
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: postgres
+      EngineVersion: "17.4"
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      DBName: elephantdb
+      BackupRetentionPeriod: 0
+      MonitoringInterval: 60
+      MonitoringRoleArn: !GetAtt RDSMonitoringRole.Arn
+      VPCSecurityGroups:
+        - !Ref VpcSecurityGroup
+      Port: 5432
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      EnableIAMDatabaseAuthentication: true
+      EnableCloudwatchLogsExports:
+        - postgresql
+      DBParameterGroupName: !Ref DBParameterGroup
+
+  DBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    DeletionPolicy: Delete
+    Properties:
+      DBParameterGroupName: !Sub "${AWS::StackName}-pg-params"
+      Description: PostgreSQL parameter group for enhanced logging
+      Family: postgres17
+      Parameters:
+        log_statement: "all"
+        log_min_duration_statement: "1000"
+        log_connections: "1"
+        log_disconnections: "1"
+        log_duration: "1"
+        log_hostname: "1"
+        log_line_prefix: "%t:%r:%u@%d:[%p]:"
+        log_error_verbosity: "default"
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-postgresql-174-db-params
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub "${AWS::StackName}-db-subnet-group"
+      DBSubnetGroupDescription: Subnet group for RDS instance
+      SubnetIds:
+        - !Ref SubnetA
+        - !Ref SubnetB
+        - !Ref SubnetC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-db-subnet-group
+
+  # CloudWatch Log Group for RDS PostgreSQL logs
+  CloudWatchLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/rds/instance/${AWS::StackName}-postgresql/postgresql"
+      RetentionInDays: 3
+
+  # Logs to Firehose
+  ## S3 Bucket for Logs
+  LogsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-logs-bucket-${AWS::AccountId}-${AWS::Region}"
+      VersioningConfiguration:
+        Status: Suspended
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+        - Id: "ExpireCurrentObjectsAfter1Day"
+          Status: "Enabled"
+          ExpirationInDays: 1
+        - Id: "ExpireOldVersionsAfter1Day"
+          Status: "Enabled"
+          NoncurrentVersionExpirationInDays: 1
+        - Id: "AbortMultipartAfter1Day"
+          Status: "Enabled"
+          AbortIncompleteMultipartUpload:
+            DaysAfterInitiation: 1
+
+  # IAM Role for Kinesis Firehose
+  FirehoseIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: FirehoseS3Policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource: !Sub "${LogsBucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                  - logs:PutLogEvents
+                  - logs:GetLogEvents
+                  - logs:DescribeLogStreams
+                  - logs:DescribeLogGroups
+                Resource: "*"
+
+  # IAM Role for CloudWatch Logs to assume and stream data to Firehose
+  CloudWatchToFirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: logs.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudWatchToFirehosePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - firehose:PutRecord
+                  - firehose:PutRecordBatch
+                Resource: !Sub "arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${FirehoseDeliveryStream}"
+
+  # Kinesis Firehose Delivery Stream
+  FirehoseDeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamType: DirectPut
+      S3DestinationConfiguration:
+        BucketARN: !GetAtt LogsBucket.Arn
+        RoleARN: !GetAtt FirehoseIAMRole.Arn
+        Prefix: !Sub "${AWS::StackName}-postgresql/${MonitoredDBInstance.Port}/"
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 1
+        CompressionFormat: UNCOMPRESSED
+
+  # CloudWatch Logs Subscription Filter to send logs to Firehose
+  CloudWatchLogsSubscriptionFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    Properties:
+      LogGroupName: !Ref CloudWatchLogGroup
+      FilterPattern: "" # Sends all logs; adjust this to filter specific logs
+      DestinationArn: !Sub "arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${FirehoseDeliveryStream}"
+      RoleArn: !GetAtt CloudWatchToFirehoseRole.Arn
+
+Outputs:
+  EC2Hostname:
+    Description: EC2 Public DNS (for SSH)
+    Value: !GetAtt EC2Instance.PublicDnsName
+
+  EC2User:
+    Description: EC2 SSH Username
+    Value: ubuntu
+
+  EC2PublicIP:
+    Description: EC2 Public IP (for SSH)
+    Value: !GetAtt EC2Instance.PublicIp
+
+  RDSAddress:
+    Description: RDS Endpoint address
+    Value: !GetAtt MonitoredDBInstance.Endpoint.Address
+
+  RDSPort:
+    Description: RDS Port
+    Value: !GetAtt MonitoredDBInstance.Endpoint.Port
+
+  IAMRoleArn:
+    Description: IAM Role ARN for EC2
+    Value: !GetAtt IAMRoleForEC2.Arn
