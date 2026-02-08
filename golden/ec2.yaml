@@ -477,12 +477,13 @@ Resources:
           dnf install -y aws-cfn-bootstrap || true
           /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource EC2Instance --region ${AWS::Region} || true
 
+          /root/tools/setup_db_mount.sh --force > /var/log/db_mount_setup.log 2>&1 || true
+
           usermod -L ec2-user || true
           dnf install docker -y
           systemctl enable --now docker
           systemctl start docker
 
-          /root/tools/setup_db_mount.sh --force > /var/log/db_mount_setup.log 2>&1 || true
 
           curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /tmp/docker-compose
           mv /tmp/docker-compose /usr/bin
