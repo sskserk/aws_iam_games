@@ -41,6 +41,14 @@ Parameters:
     NoEcho: true
     Default: elephant123!
     Description: RDS master password (NoEcho)
+  InternalDomainName:
+    Type: String
+    Default: internal.domain.local
+    Description: Private hosted zone domain name
+  AwideServerName:
+    Type: String
+    Default: awide-server
+    Description: Hostname for the EC2 instance in the private hosted zone
 
 Resources:
   # VPC and Networking Resources
@@ -166,6 +174,15 @@ Resources:
               Service:
                 - ec2.amazonaws.com
             Action: sts:AssumeRole
+      Policies:
+        - PolicyName: EC2DescribeTagsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeTags
+                Resource: '*'
       Path: /
       Description: EC2 Role for CloudWatch and RDS metrics
 
@@ -211,6 +228,24 @@ Resources:
         - !Ref IAMRoleForEC2
       Path: /
 
+  PrivateHostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: !Ref InternalDomainName
+      VPCs:
+        - VPCId: !Ref VPC
+          VPCRegion: !Ref AWS::Region
+
+  EC2DNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref PrivateHostedZone
+      Name: !Sub ${AwideServerName}.${InternalDomainName}
+      Type: A
+      TTL: 300
+      ResourceRecords:
+        - !GetAtt EC2Instance.PrivateIp  # Uses private IP
+
   EC2Instance:
     Type: AWS::EC2::Instance
     Metadata:
@@ -239,7 +274,7 @@ Resources:
                 set -euo pipefail
 
                 DEVICE="/dev/sda1"
-                MOUNT_POINT="/var/lib/awidedbdata"
+                MOUNT_POINT="/opt/awide"
 
                 DRY_RUN=false
                 FORCE=false
@@ -481,27 +516,27 @@ Resources:
 
           usermod -L ec2-user || true
           dnf install docker -y
+
           systemctl enable --now docker
+
+          sudo mkdir -p /usr/local/lib/docker/cli-plugins
+
+          # Download the latest Docker Compose plugin
+          sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+
+          # Make it executable
+          sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+          ln -s /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose
+
           systemctl start docker
 
-
-          curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /tmp/docker-compose
-          mv /tmp/docker-compose /usr/bin
-          chmod +x /usr/bin/docker-compose
-
-          # Create a new user
-          useradd -m -s /bin/bash awideapp
-          
-          # Set password for the user (optional)
-          echo "awideapp:L9q!vC3z#T7p@wX2" | chpasswd
-          
+          # Create the awideapp user
+          useradd -m -s /bin/bash awideapp          
+         
           # Add user to sudo group
           usermod -aG wheel awideapp
           
-          # For Ubuntu, use this instead:
-          # usermod -aG sudo awideapp
-          
-          # Allow passwordless sudo (optional)
+          # Allow passwordless sudo
           echo "awideapp ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/awideapp
           chmod 440 /etc/sudoers.d/awideapp
 
