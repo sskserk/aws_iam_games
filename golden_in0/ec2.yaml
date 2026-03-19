@@ -212,6 +212,11 @@ Resources:
             Resource: "*"
           - Effect: Allow
             Action:
+              - s3:ListBucket
+              - s3:GetObject
+            Resource: !Sub "arn:aws:s3:::${LogsBucket}/*"
+          - Effect: Allow
+            Action:
               - ec2:DescribeInstanceTypes
             Resource: "*"
           - Effect: Allow
@@ -269,8 +274,8 @@ Resources:
           #!/bin/bash -xe
           dnf update -y
 
-          # Set environment variables for the awideapp user
-          cat >> /home/awideapp/.bash_profile <<'EOF'
+          # Set environment variables for the root user
+          cat >> /root/.bash_profile <<'EOF'
           export S3_LOGS_BUCKET_NAME=${LogsBucket}
           export S3_LOGS_BUCKET_ARN=${LogsBucket.Arn}
           export AWS_REGION=${AWS::Region}
@@ -450,6 +455,7 @@ Resources:
         BucketARN: !GetAtt LogsBucket.Arn
         RoleARN: !GetAtt FirehoseIAMRole.Arn
         Prefix: !Sub "${AWS::StackName}-postgresql/${MonitoredDBInstance.Port}/"
+        Suffix: ".log"
         BufferingHints:
           IntervalInSeconds: 60
           SizeInMBs: 1
