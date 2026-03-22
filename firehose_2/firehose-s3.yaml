@@ -163,7 +163,7 @@ Resources:
         RoleARN: !GetAtt FirehoseIAMRole.Arn
         Prefix: !Sub "${AWS::StackName}-postgresql-2/${RDSInstance2.Port}/"
         BufferingHints:
-          IntervalInSeconds: 60
+          IntervalInSeconds: 180
           SizeInMBs: 1
         CompressionFormat: UNCOMPRESSED
 

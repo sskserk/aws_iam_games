@@ -1,95 +1,50 @@
-Assume Role Policy Document для EC2 роли для сбора метрик CloudWatch и описания RDS инстансов:
-
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Service": "ec2.amazonaws.com"
-      },
-      "Action": "sts:AssumeRole"
-    }
-  ]
-}
-
-Policy привязанный к роли EC2 для сбора метрик CloudWatch и описания RDS инстансов:
-
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Action": [
-                "cloudwatch:GetMetricData",
-                "cloudwatch:GetMetricStatistics",
-                "cloudwatch:ListMetrics",
-                "cloudwatch:DescribeAlarms"
-            ],
-            "Resource": "*",
-            "Effect": "Allow",
-            "Condition": {
-                "StringEquals": {
-                    "cloudwatch:namespace": "AWS/RDS"
-                }
-            }
-        },
-        {
-            "Action": [
-                "rds:DescribeDBInstances",
-                "rds:ListTagsForResource"
-            ],
-            "Resource": "*",
-            "Effect": "Allow"
-        }
-    ]
-}
-
-
-===============================================
-Отправка CloudWatch логи в FireHose:
-
-Параметры:
-- Код FireHose стрима: logging-tantor-stack26-FirehoseDeliveryStream-pvJ8LqjFslaN
-
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Action": [
-                "firehose:PutRecord",
-                "firehose:PutRecordBatch"
-            ],
-            "Resource": "arn:aws:firehose:eu-central-1:067416960388:deliverystream/logging-tantor-stack26-FirehoseDeliveryStream-pvJ8LqjFslaN",
-            "Effect": "Allow"
-        }
-    ]
-}
-
-Где код стрима: logging-tantor-stack26-FirehoseDeliveryStream-pvJ8LqjFslaN
-
-
-===============================================
-
-FireHose запись в S3:
-
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Action": [
-                "s3:PutObject",
-                "s3:PutObjectAcl"
-            ],
-            "Resource": "arn:aws:s3:::logging-tantor-stack26-logs-bucket/*",
-            "Effect": "Allow"
-        }
-    ]
-}
-где код бакета: logging-tantor-stack26-logs-bucket
-
-
- aws --profile al --region us-east-1 s3api delete-objects --bucket cfn-platform-logs-bucket-361226442924-us-east-1 \
---delete "$(aws --profile al --region us-east-1 s3api list-object-versions --bucket cfn-platform-logs-bucket-361226442924-us-east-1 --query='{Objects: Versions[].{Key:Key,VersionId:VersionId}}')"
-
-aws --profile al --region us-east-1 s3api delete-objects --bucket cfn-platform-logs-bucket-361226442924-us-east-1 \
---delete "$(aws --profile al --region us-east-1 s3api list-object-versions --bucket cfn-platform-logs-bucket-361226442924-us-east-1 --query='{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}')"
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          files:
+            /home/ec2-user/my-script.sh:
+              content: !Sub |
+                #!/bin/bash
+                # Your bash script content here
+                echo "My custom script is running..."
+                
+                # Add all your script commands
+                sudo yum install -y htop
+                sudo systemctl start some-service
+                
+                # Your logic here
+                echo "Script execution completed"
+              mode: '000755'
+              owner: ec2-user
+              group: ec2-user
+    Properties:
+      ImageId: ami-0abcdef1234567890
+      InstanceType: t2.micro
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Install CloudFormation helper scripts
+          yum update -y
+          yum install -y aws-cfn-bootstrap
+          
+          # Initialize CloudFormation metadata (creates the script file)
+          /opt/aws/bin/cfn-init -v \
+            --stack ${AWS::StackName} \
+            --resource MyEC2Instance \
+            --region ${AWS::Region}
+          
+          # Execute your script
+          /home/ec2-user/my-script.sh
+          
+          # Signal success/failure back to CloudFormation
+          /opt/aws/bin/cfn-signal -e $? \
+            --stack ${AWS::StackName} \
+            --resource MyEC2Instance \
+            --region ${AWS::Region}
+    CreationPolicy:
+      ResourceSignals:
+        Timeout: PT10M

@@ -451,11 +451,11 @@ Resources:
     Type: AWS::KinesisFirehose::DeliveryStream
     Properties:
       DeliveryStreamType: DirectPut
-      S3DestinationConfiguration:
+      ExtendedS3DestinationConfiguration:
         BucketARN: !GetAtt LogsBucket.Arn
         RoleARN: !GetAtt FirehoseIAMRole.Arn
         Prefix: !Sub "${AWS::StackName}-postgresql/${MonitoredDBInstance.Port}/"
-        Suffix: ".log"
+        FileExtension: .gz
         BufferingHints:
           IntervalInSeconds: 60
           SizeInMBs: 1

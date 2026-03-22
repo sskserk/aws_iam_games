@@ -1,0 +1,18 @@
+Generate me a cloud formation manifest that does the following:
+1. spins up the simplest rds postgres instance. no replication, no backups, only pure postgres. postgres has to store its logs in cloud watch.
+2. streaming the cloud watch into an S3 bucket using firehose.
+
+
+
+
+create me a cloud formation script that does the following:
+1. Creaters instances: RDS, EC2, IAM role and policies
+2. IAM role must allow the created EC2 instance to access Cloud Watch and request RDS metrics.
+
+
+
+1. Инстанс  ec2-13-218-177-136.compute-1.amazonaws.com (t3.large)
+2. Коннект по SSH под своим ключем как то так 'ssh -i "awide-keypair.pem" ec2-user@ec2-13-218-177-136.compute-1.amazonaws.com'
+3. Под платформу создал пользователя 'awideapp', в него можно попасть под sudo
+3.1. У пользователя в энвах есть 2 переменные в которых определены координаты S3:
+    S3_LOGS_BUCKET_NAME &  S3_LOGS_BUCKET_ARN

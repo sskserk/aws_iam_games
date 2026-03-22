@@ -1,0 +1,46 @@
+{
+    "messageType": "CONTROL_MESSAGE",
+    "owner": "CloudwatchLogs",
+    "logGroup": "",
+    "logStream": "",
+    "subscriptionFilters": [],
+    "logEvents": [
+        {
+            "id": "",
+            "timestamp": 1762722412089,
+            "message": "CWL CONTROL MESSAGE: Checking health of destination Firehose."
+        }
+    ]
+}
+{
+    "messageType": "DATA_MESSAGE",
+    "owner": "067416960388",
+    "logGroup": "/aws/rds/instance/logging-tantor-stack10-postgresql-2/postgresql",
+    "logStream": "logging-tantor-stack10-postgresql-2.0",
+    "subscriptionFilters": [
+        "logging-tantor-stack10-CloudWatchLogsSubscriptionFilter2-ynfGzIJPQGub"
+    ],
+    "logEvents": [
+        {
+            "id": "39310024636893795198287378473351490860172583869927129088",
+            "timestamp": 1762722469000,
+            "message": "2025-11-09 21:07:49 UTC::@:[1338]:LOG:  checkpoint starting: time"
+        }
+    ]
+}
+{
+    "messageType": "DATA_MESSAGE",
+    "owner": "067416960388",
+    "logGroup": "/aws/rds/instance/logging-tantor-stack10-postgresql-2/postgresql",
+    "logStream": "logging-tantor-stack10-postgresql-2.0",
+    "subscriptionFilters": [
+        "logging-tantor-stack10-CloudWatchLogsSubscriptionFilter2-ynfGzIJPQGub"
+    ],
+    "logEvents": [
+        {
+            "id": "39310026933870550646941562174819001611772498350445821952",
+            "timestamp": 1762722572000,
+            "message": "2025-11-09 21:09:32 UTC::@:[1338]:LOG:  checkpoint complete: wrote 1082 buffers (4.6%); 0 WAL file(s) added, 0 removed, 0 recycled; write=102.983 s, sync=0.003 s, total=102.993 s; sync files=372, longest=0.002 s, average=0.001 s; distance=1562 kB, estimate=1562 kB; lsn=0/80001F0, redo lsn=0/4D69E38"
+        }
+    ]
+}

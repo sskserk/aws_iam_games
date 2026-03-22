@@ -36,7 +36,6 @@ Resources:
       PubliclyAccessible: false
       BackupRetentionPeriod: 0
       StorageType: gp2
-      Port: 5431
       EnableCloudwatchLogsExports:
         - "postgresql"
       VPCSecurityGroups:
@@ -52,8 +51,8 @@ Resources:
       GroupDescription: "Allow RDS PostgreSQL Access"
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 5431
-          ToPort: 5431
+          FromPort: 5432
+          ToPort: 5432
           CidrIp: 0.0.0.0/0 # Open to all (adjust for production)
       VpcId: !Ref VpcId
 
@@ -117,12 +116,11 @@ Resources:
       S3DestinationConfiguration:
         BucketARN: !GetAtt LogsBucket.Arn
         RoleARN: !GetAtt FirehoseIAMRole.Arn
-        Prefix: !Sub "${AWS::StackName}-postgresql/${RDSInstance.Port}/"
+        Prefix: "logs/"
         BufferingHints:
-          IntervalInSeconds: 60
-          SizeInMBs: 1
+          IntervalInSeconds: 300
+          SizeInMBs: 5
         CompressionFormat: GZIP
-
 
   # 2.
   # CloudWatch Log Group for RDS PostgreSQL logs

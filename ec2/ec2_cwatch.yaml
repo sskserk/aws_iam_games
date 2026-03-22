@@ -8,10 +8,10 @@ Parameters:
     Type: String
     Description: VPC ID for resources (use your default VPC if unsure).
     Default: vpc-038e67f635b7fa3dd
-  KeyName:
-    Type: AWS::EC2::KeyPair::KeyName
-    Description: EC2 KeyPair for SSH access
-    Default: trantor_key
+  # KeyName:
+  #   Type: AWS::EC2::KeyPair::KeyName
+  #   Description: EC2 KeyPair for SSH access
+  #   Default: ec2keypairtantor
   EC2InstanceType:
     Type: String
     Default: t3.micro
@@ -79,6 +79,23 @@ Resources:
       Path: /
       Description: EC2 Role for CloudWatch and RDS metrics
 
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+
+  # EC2KeyPairTantor:
+  #   Type: AWS::EC2::KeyPair
+  #   Properties:
+  #     KeyName: ec2keypairtantor
+  #     PublicKeyMaterial: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIwtakddUaJ4lRXDtw4jwFNlJsqMAYXqXtVlzp7UOQmO serk@serkpc
+
   EC2Policy:
     Type: AWS::IAM::Policy
     Properties:
@@ -94,7 +111,6 @@ Resources:
               - cloudwatch:GetMetricStatistics
               - cloudwatch:ListMetrics
               - cloudwatch:DescribeAlarms
-              - cloudwatch:PutMetricData
             Resource: "*"
           - Effect: Allow
             Action:
@@ -118,11 +134,11 @@ Resources:
   EC2Instance:
     Type: AWS::EC2::Instance
     Properties:
+      KeyName: ec2keypairtantor
       ImageId: !Ref AmiId
       InstanceType: !Ref EC2InstanceType
       SecurityGroupIds:
         - !Ref EC2SecurityGroup
-      KeyName: !Ref KeyName
       IamInstanceProfile: !Ref EC2InstanceProfile
       UserData:
         Fn::Base64: !Sub |

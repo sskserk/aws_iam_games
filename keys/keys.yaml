@@ -1,0 +1,29 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create EC2 KeyPair from locally generated SSH keys, upload private key to Secrets Manager.
+
+# Parameters:
+#   KeyPairName:
+#     Description: Name for the EC2 Key Pair
+#     Type: String
+#     Default: trantor_key
+#   PublicKeyMaterial:
+#     Description: Paste your SSH public key (id_rsa.pub) contents here
+#     Type: String
+#     Default: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCwIWV6WyJzJ1ocMwEt0l5jDVYmH/G6sjJCEQQ8i7v3pcj/qo9aIWpd0k3lMKg8QPOSmVKo4OTX79NjA0Xq0/q4eJfNqTdMAvrMy0riLwF6YXebMN0HTGtkY3T7cTxYQDqz3ufIEqdbMbNywYX+P453gC5AiQRLnphdBn+AwasqRkrAlDHXS4+hbkfV4JNuKbfWI7yNBsRVIVS9xP8To6miaTcn4r6CP9x426kzmBak1QiAETMJR1O4tms8I3NGP4P4l3VypXqbBZxFiYf9d4D2qk6hDtdZryg0Bhzc/o9NISHOzkVBWDWJHQlPYf2MbC4yY6CGiDd7zY1xUN5yoCheGl3cNxi3tio3Vl3UQq6yrvw5PTkdEvxcB+5Jn/bQvFa0V/bHVOJsOe62DCSy/BsSBVo+Nel6RSOpxSLJmmmp0kkSKMWIRIPguCihStpepRCphthpGGEix7OIDAgLeoioM66C2+oObDbok0SXSMtgQJVE7L2EgPRa13AVUemxzPk= serk@serkpc
+#   PrivateKeyMaterial:
+#     Description: Paste your SSH private key (id_rsa) contents here
+#     Type: String
+#     NoEcho: true
+
+Resources:
+  ImportedKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: trantor_key
+      PublicKeyMaterial: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCwIWV6WyJzJ1ocMwEt0l5jDVYmH/G6sjJCEQQ8i7v3pcj/qo9aIWpd0k3lMKg8QPOSmVKo4OTX79NjA0Xq0/q4eJfNqTdMAvrMy0riLwF6YXebMN0HTGtkY3T7cTxYQDqz3ufIEqdbMbNywYX+P453gC5AiQRLnphdBn+AwasqRkrAlDHXS4+hbkfV4JNuKbfWI7yNBsRVIVS9xP8To6miaTcn4r6CP9x426kzmBak1QiAETMJR1O4tms8I3NGP4P4l3VypXqbBZxFiYf9d4D2qk6hDtdZryg0Bhzc/o9NISHOzkVBWDWJHQlPYf2MbC4yY6CGiDd7zY1xUN5yoCheGl3cNxi3tio3Vl3UQq6yrvw5PTkdEvxcB+5Jn/bQvFa0V/bHVOJsOe62DCSy/BsSBVo+Nel6RSOpxSLJmmmp0kkSKMWIRIPguCihStpepRCphthpGGEix7OIDAgLeoioM66C2+oObDbok0SXSMtgQJVE7L2EgPRa13AVUemxzPk= serk@serkpc
+  
+ 
+# Outputs:
+#   KeyPairName:
+#     Description: The name of the created EC2 Key Pair
+#     Value: !Ref SSHKeyPair
