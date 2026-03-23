@@ -212,6 +212,11 @@ Resources:
             Resource: "*"
           - Effect: Allow
             Action:
+              - s3:ListBucket
+              - s3:GetObject
+            Resource: !Sub "arn:aws:s3:::${LogsBucket}"
+          - Effect: Allow
+            Action:
               - ec2:DescribeInstanceTypes
             Resource: "*"
           - Effect: Allow
@@ -517,6 +522,9 @@ Resources:
           usermod -L ec2-user || true
           dnf install docker -y
 
+          mkdir -p /etc/docker || true
+          echo "{ \"data-root\": \"/opt/awide/docker\" }" > /etc/docker/daemon.json
+
           systemctl enable --now docker
 
           sudo mkdir -p /usr/local/lib/docker/cli-plugins
@@ -541,7 +549,7 @@ Resources:
           chmod 440 /etc/sudoers.d/awideapp
 
           # Set environment variables for the awideapp user
-          cat >> /home/awideapp/.bash_profile <<'EOF'
+          cat >> /root/.bash_profile <<'EOF'
           export S3_LOGS_BUCKET_NAME=${LogsBucket}
           export S3_LOGS_BUCKET_ARN=${LogsBucket.Arn}
           export AWS_REGION=${AWS::Region}
@@ -712,11 +720,11 @@ Resources:
   FirehoseDeliveryStream:
     Type: AWS::KinesisFirehose::DeliveryStream
     Properties:
-      DeliveryStreamType: DirectPut
-      S3DestinationConfiguration:
+      ExtendedS3DestinationConfiguration:
         BucketARN: !GetAtt LogsBucket.Arn
         RoleARN: !GetAtt FirehoseIAMRole.Arn
         Prefix: !Sub "${AWS::StackName}-postgresql/${MonitoredDBInstance.Port}/"
+        FileExtension: .gz
         BufferingHints:
           IntervalInSeconds: 60
           SizeInMBs: 1
