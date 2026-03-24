@@ -213,8 +213,11 @@ Resources:
           - Effect: Allow
             Action:
               - s3:ListBucket
-              - s3:GetObject
             Resource: !Sub "arn:aws:s3:::${LogsBucket}"
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource: !Sub "arn:aws:s3:::${LogsBucket}/*"
           - Effect: Allow
             Action:
               - ec2:DescribeInstanceTypes
