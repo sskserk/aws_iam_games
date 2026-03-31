@@ -26,7 +26,7 @@ Parameters:
     Description: EC2 instance type
   AmiId:
     Type: AWS::EC2::Image::Id
-    Default: ami-070741854f0325d7f
+    Default: ami-02dfbd4ff395f2a1b
     Description: Amazon Linux 2023
   DBInstanceClass:
     Type: String
@@ -214,7 +214,7 @@ Resources:
             Action:
               - s3:ListBucket
               - s3:GetObject
-            Resource: !Sub "arn:aws:s3:::${LogsBucket}/*"
+            Resource: !Sub "arn:aws:s3:::${LogsBucket}"
           - Effect: Allow
             Action:
               - ec2:DescribeInstanceTypes
@@ -266,7 +266,7 @@ Resources:
           Ebs:
             VolumeSize: 50  # Size in GB
             VolumeType: gp3
-            Iops: 10000
+#            Iops: 10000
             DeleteOnTermination: true
             Encrypted: false
       UserData:
@@ -275,18 +275,24 @@ Resources:
           dnf update -y
 
           # Set environment variables for the root user
-          cat >> /root/.bash_profile <<'EOF'
+          cat > /etc/profile.d/awide-env.sh <<'EOF'
           export S3_LOGS_BUCKET_NAME=${LogsBucket}
           export S3_LOGS_BUCKET_ARN=${LogsBucket.Arn}
           export AWS_REGION=${AWS::Region}
           EOF
+
+          chmod +x /etc/profile.d/awide-env.sh
+          bash /etc/profile.d/awide-env.sh > /var/log/awide.log 2>&1 || true
+
+          mkdir -p /etc/docker || true
+          echo "{ \"data-root\": \"/opt/awide/docker\" }" > /etc/docker/daemon.json
 
           platform-updater self-update  > /var/log/awide.log 2>&1 || true
           platform-updater init >> /var/log/awide.log 2>&1 || true
           systemctl start platform-updater >> /var/log/awide.log 2>&1 || true
       Tags:
         - Key: Name
-          Value: !Sub "AWIDE-EC2-Instance-${AWS::StackName}"
+          Value: !Sub "AWIDE-PG-SUITE-EC2-Instance-${AWS::StackName}"
 
   RDSMonitoringRole:
     Type: AWS::IAM::Role
