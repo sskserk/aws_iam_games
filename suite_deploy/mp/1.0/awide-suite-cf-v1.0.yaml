@@ -26,7 +26,7 @@ Parameters:
     Description: EC2 instance type
   AmiId:
     Type: AWS::EC2::Image::Id
-    Default: ami-02dfbd4ff395f2a1b
+    Default: ami-06d4a3d657beeafc5  
     Description: Amazon Linux 2023
   DBInstanceClass:
     Type: String
@@ -287,8 +287,8 @@ Resources:
           mkdir -p /etc/docker || true
           echo "{ \"data-root\": \"/opt/awide/docker\" }" > /etc/docker/daemon.json
 
-          platform-updater self-update  > /var/log/awide.log 2>&1 || true
-          platform-updater init >> /var/log/awide.log 2>&1 || true
+          aw   self-update  > /var/log/awide.log 2>&1 || true
+          platform-updater init --s3-bucket ${LogsBucket} >> /var/log/awide.log 2>&1 || true
           systemctl start platform-updater >> /var/log/awide.log 2>&1 || true
       Tags:
         - Key: Name
