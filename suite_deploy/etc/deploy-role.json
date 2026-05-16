@@ -1,0 +1,36 @@
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "ReadOnlyDescribe",
+			"Effect": "Allow",
+			"Action": [
+				"ec2:DescribeInstances",
+				"rds:DescribeDBInstances",
+				"ec2:DescribeSecurityGroups",
+				"iam:GetRole",
+				"iam:ListRoles",
+				"cloudwatch:GetMetricData",
+				"cloudwatch:ListMetrics",
+				"s3:ListBucket"
+			],
+			"Resource": "*"
+		},
+		{
+			"Effect": "Allow",
+			"Action": [
+				"ssm:GetParameter",
+				"ssm:GetParameters",
+				"ssm:GetParametersByPath",
+				"ssm:DescribeParameters"
+			],
+			"Resource": "*"
+		},
+		{
+			"Sid": "AllowDescribeImages",
+			"Effect": "Allow",
+			"Action": "ec2:DescribeImages",
+			"Resource": "*"
+		}
+	]
+}

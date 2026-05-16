@@ -26,8 +26,7 @@ Parameters:
     Description: EC2 instance type
   AmiId:
     Type: AWS::EC2::Image::Id
-    # 	ami-06d4a3d657beeafc5
-    Default: ami-07cf12779c0113e42
+    Default: ami-07cf12779c0113e42 
     Description: Amazon Linux 2023
   DBInstanceClass:
     Type: String
@@ -263,19 +262,13 @@ Resources:
       IamInstanceProfile: !Ref EC2InstanceProfile
       SubnetId: !Ref SubnetA
       BlockDeviceMappings:
-          - DeviceName: /dev/sda1
-            Ebs:
-              VolumeSize: 50  # Size in GB
-              VolumeType: gp3
-  #            Iops: 10000
-              DeleteOnTermination: true
-              Encrypted: false
-          - DeviceName: /dev/xvda
-            Ebs:
-              VolumeSize: 30  # Size in GB (override default 10GB)
-              VolumeType: gp3
-              DeleteOnTermination: true
-              Encrypted: false
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 50  # Size in GB
+            VolumeType: gp3
+            Iops: 3000
+            DeleteOnTermination: true
+            Encrypted: false
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash -xe
@@ -291,6 +284,10 @@ Resources:
           chmod +x /etc/profile.d/awide-env.sh
           source /etc/profile.d/awide-env.sh >> /var/log/awide.log 2>&1 || true
 
+          mkdir -p /etc/docker || true
+          echo "{ \"data-root\": \"/opt/awide/docker\" }" > /etc/docker/daemon.json
+
+          env >> /var/log/awide.log
           platform-updater self-update  >> /var/log/awide.log 2>&1 || true
           platform-updater init >> /var/log/awide.log 2>&1 || true
           systemctl start platform-updater >> /var/log/awide.log 2>&1 || true
