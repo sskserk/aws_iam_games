@@ -330,6 +330,7 @@ Resources:
       MonitoringRoleArn: !GetAtt RDSMonitoringRole.Arn
       VPCSecurityGroups:
         - !Ref VpcSecurityGroup
+      PubliclyAccessible: true
       Port: 5432
       MasterUsername: !Ref DBUsername
       MasterUserPassword: !Ref DBPassword

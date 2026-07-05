@@ -26,7 +26,7 @@ Parameters:
     Description: EC2 instance type
   AmiId:
     Type: AWS::EC2::Image::Id
-    Default: ami-07cf12779c0113e42 
+    Default: ami-04d98b84268279947
     Description: Amazon Linux 2023
   # DBInstanceClass:
   #   Type: String
@@ -49,6 +49,11 @@ Parameters:
     Type: String
     Default: awide-server
     Description: Hostname for the EC2 instance in the private hosted zone
+
+  AwideSuiteVersion:
+    Type: String
+    Default: 6.4.1
+    Description: Version of the Awide Suite to install on the EC2 instance
 
 Resources:
   # VPC and Networking Resources
@@ -313,6 +318,7 @@ Resources:
           export S3_LOGS_BUCKET_ARN=${LogsBucket.Arn}
           export AWS_REGION=${AWS::Region}
           export AWIDE_PRIVATE_DNS=${AwideServerName}.${InternalDomainName}
+          export AWIDE_SUITE_VERSION=${AwideSuiteVersion}
           EOF
 
           chmod +x /etc/profile.d/awide-env.sh

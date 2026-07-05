@@ -1,0 +1,6 @@
+certbot certonly \
+	--standalone \
+	--preferred-challenges http \
+	--non-interactive \
+	--agree-tos -m admin@awide.tech \
+	-d dev.awide.tech

@@ -1,50 +1,27 @@
-AWSTemplateFormatVersion: '2010-09-09'
-Resources:
-  MyEC2Instance:
-    Type: AWS::EC2::Instance
-    Metadata:
-      AWS::CloudFormation::Init:
-        config:
-          files:
-            /home/ec2-user/my-script.sh:
-              content: !Sub |
-                #!/bin/bash
-                # Your bash script content here
-                echo "My custom script is running..."
-                
-                # Add all your script commands
-                sudo yum install -y htop
-                sudo systemctl start some-service
-                
-                # Your logic here
-                echo "Script execution completed"
-              mode: '000755'
-              owner: ec2-user
-              group: ec2-user
-    Properties:
-      ImageId: ami-0abcdef1234567890
-      InstanceType: t2.micro
-      UserData:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          # Install CloudFormation helper scripts
-          yum update -y
-          yum install -y aws-cfn-bootstrap
-          
-          # Initialize CloudFormation metadata (creates the script file)
-          /opt/aws/bin/cfn-init -v \
-            --stack ${AWS::StackName} \
-            --resource MyEC2Instance \
-            --region ${AWS::Region}
-          
-          # Execute your script
-          /home/ec2-user/my-script.sh
-          
-          # Signal success/failure back to CloudFormation
-          /opt/aws/bin/cfn-signal -e $? \
-            --stack ${AWS::StackName} \
-            --resource MyEC2Instance \
-            --region ${AWS::Region}
-    CreationPolicy:
-      ResourceSignals:
-        Timeout: PT10M
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "Service": "logs.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "firehose:PutRecord",
+                "firehose:PutRecordBatch"
+            ],
+            "Resource": "arn:aws:firehose:us-east-1:770565308889>:deliverystream/PUT-database-1-stream"
+        }
+    ]
+}

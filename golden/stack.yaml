@@ -210,14 +210,7 @@ Resources:
               - rds:DescribeDBLogFiles
               - rds:ModifyDBParameterGroup
             Resource: "*"
-          - Effect: Allow
-            Action:
-              - s3:ListBucket
-            Resource: !Sub "arn:aws:s3:::${LogsBucket}"
-          - Effect: Allow
-            Action:
-              - s3:GetObject
-            Resource: !Sub "arn:aws:s3:::${LogsBucket}/*"
+
           - Effect: Allow
             Action:
               - ec2:DescribeInstanceTypes
@@ -260,12 +253,207 @@ Resources:
       AWS::CloudFormation::Init:
         config:
           files:
+            /root/tools/cert_issue.sh:
+              mode: "000755"
+              owner: root
+              group: root
+              content: |
+                #!/usr/bin/env bash
+                set -euo pipefail
+
+                ###############################################
+                # CONFIGURATION
+                ###############################################
+                DOMAIN="example.com"  # Replace with your actual domain
+                EMAIL="admin@example.com"  # Replace with your email for certbot notifications
+
+                PORT80_CONTAINER="reverse-proxy"
+                CONTAINER_RUNTIME="docker"
+                CONTAINER_USER="root"
+
+                # Append all output to this file.
+                LOG_FILE="/var/log/awide_cert.log"
+
+                ###############################################
+                # INTERNALS
+                ###############################################
+
+                # This script uses the HTTP-01 challenge with certbot's standalone mode.
+                # Ensure ports 80 and 443 are open and your domain points to this server.
+
+                mkdir -p "$(dirname "$LOG_FILE")"
+                exec > >(tee -a "$LOG_FILE") 2>&1
+
+                ctr() {
+                  sudo -iu "$CONTAINER_USER" "$CONTAINER_RUNTIME" "$@"
+                }
+
+
+                # Check if port 80 is in use
+                if lsof -i :80 -sTCP:LISTEN -t >/dev/null 2>&1; then
+                  # Port 80 is in use, try to stop the container
+                  if ctr inspect "$PORT80_CONTAINER" >/dev/null 2>&1; then
+                    if ctr inspect -f '{{.State.Running}}' "$PORT80_CONTAINER" | grep -q true; then
+                      ctr stop "$PORT80_CONTAINER"
+                      trap 'ctr start "$PORT80_CONTAINER"' EXIT
+                    else
+                      echo "Error: Port 80 is in use but $PORT80_CONTAINER is not running. Please free port 80 manually." >&2
+                      exit 1
+                    fi
+                  else
+                    echo "Error: Port 80 is in use but container $PORT80_CONTAINER does not exist. Please free port 80 manually." >&2
+                    exit 1
+                  fi
+                else
+                  echo "Port 80 is free, proceeding without stopping any container."
+                fi
+
+                certbot certonly \
+                  --standalone \
+                  --preferred-challenges http \
+                  --non-interactive \
+                  --agree-tos \
+                  -m "$EMAIL" \
+                  -d "$DOMAIN"
+
+                cp "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "/opt/awide/eco/nginx/ssl/certificate.pem"
+                cp "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "/opt/awide/eco/nginx/ssl/key.pem"    
+            /root/tools/cert_daily_check.sh:
+              mode: "000755"
+              owner: root
+              group: root
+              content: |   
+                #!/usr/bin/env bash
+                set -euo pipefail
+
+                ###############################################
+                # CONFIGURATION
+                ###############################################
+                DOMAIN="example.com"
+
+                # Container currently using host port 80
+                PORT80_CONTAINER="reverse-proxy"
+                CONTAINER_RUNTIME="docker"
+                CONTAINER_USER="root"
+
+                # Where to copy cert/key for your proxy
+                TARGET_CERT_DIR="/opt/awide/eco/nginx/ssl"
+
+                # Renewal threshold (days)
+                RENEW_BEFORE_DAYS=7
+
+                # Append all output to this file.
+                LOG_FILE="/var/log/awide_cert.log"
+
+                ###############################################
+                # INTERNALS
+                ###############################################
+                SECONDS_THRESHOLD=$((RENEW_BEFORE_DAYS * 24 * 3600))
+                LIVE_DIR="/etc/letsencrypt/live/${DOMAIN}"
+                FULLCHAIN="${LIVE_DIR}/fullchain.pem"
+                PRIVKEY="${LIVE_DIR}/privkey.pem"
+
+                log() {
+                  echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] $*"
+                }
+
+                mkdir -p "$(dirname "$LOG_FILE")"
+                exec >> "$LOG_FILE" 2>&1
+
+                need_cmd() {
+                  command -v "$1" >/dev/null 2>&1 || {
+                    echo "Missing required command: $1" >&2
+                    exit 1
+                  }
+                }
+
+                need_cmd sudo
+                need_cmd "$CONTAINER_RUNTIME"
+                need_cmd certbot
+                need_cmd openssl
+
+                ctr() {
+                  sudo -iu "$CONTAINER_USER" "$CONTAINER_RUNTIME" "$@"
+                }
+
+                container_running() {
+                  local c="$1"
+                  [[ "$(ctr inspect -f '{{.State.Running}}' "$c" 2>/dev/null || true)" == "true" ]]
+                }
+
+                stop_container_if_running() {
+                  local c="$1"
+                  if container_running "$c"; then
+                    log "Stopping container: $c"
+                    ctr stop "$c" >/dev/null
+                    return 0
+                  fi
+                  return 1
+                }
+
+                start_container() {
+                  local c="$1"
+                  log "Starting container: $c"
+                  ctr start "$c" >/dev/null
+                }
+
+                copy_certs() {
+                  mkdir -p "$TARGET_CERT_DIR"
+                  cp "$FULLCHAIN" "$TARGET_CERT_DIR/certificate.pem"
+                  cp "$PRIVKEY" "$TARGET_CERT_DIR/key.pem"
+                  log "Certificates copied to $TARGET_CERT_DIR"
+                }
+
+                should_renew=true
+
+                if [[ ! -f "$FULLCHAIN" || ! -f "$PRIVKEY" ]]; then
+                  log "Certificate files not found. Initial issuance required."
+                  should_renew=true
+                else
+                  if openssl x509 -checkend "$SECONDS_THRESHOLD" -noout -in "$FULLCHAIN"; then
+                    log "Certificate is valid for more than ${RENEW_BEFORE_DAYS} days. No renewal needed."
+                    should_renew=false
+                  else
+                    log "Certificate expires in less than ${RENEW_BEFORE_DAYS} days. Renewal required."
+                    should_renew=true
+                  fi
+                fi
+
+
+                if [[ "$should_renew" == "false" ]]; then
+                  log "Skipping copy/restart because renewal is not required."
+                  exit 0
+                fi
+
+                stopped_port80_container=false
+                if stop_container_if_running "$PORT80_CONTAINER"; then
+                  stopped_port80_container=true
+                fi
+
+                cleanup() {
+                  if [[ "$stopped_port80_container" == "true" ]]; then
+                    start_container "$PORT80_CONTAINER"
+                  fi
+                }
+                trap cleanup EXIT
+
+                log "Requesting/Renewing certificate for domain: $DOMAIN"
+                certbot renew --non-interactive
+
+                copy_certs
+
+                if [[ -n "$PORT80_CONTAINER" ]]; then
+                  log "Restarting TLS container: $PORT80_CONTAINER"
+                  ctr restart "$PORT80_CONTAINER" >/dev/null
+                fi
+
+                log "Let's Encrypt weekly check completed successfully."
             /root/tools/setup_db_mount.sh:
               mode: "000755"
               owner: root
               group: root
               content: |
-                #!/bin/bash
+                #!/usr/bin/env bash
 
                 # Idempotent disk setup script:
                 # - Ensures DEVICE has an ext4 filesystem (creates it only when needed).
@@ -508,7 +696,7 @@ Resources:
           Ebs:
             VolumeSize: 50  # Size in GB
             VolumeType: gp3
-            Iops: 10000
+            Iops: 3000
             DeleteOnTermination: true
             Encrypted: false
       UserData:
@@ -522,12 +710,13 @@ Resources:
 
           /root/tools/setup_db_mount.sh --force > /var/log/db_mount_setup.log 2>&1 || true
 
-          dnf install docker -y
+          dnf install docker certbot openssl cronie -y
 
           mkdir -p /etc/docker || true
           echo "{ \"data-root\": \"/opt/awide/docker\" }" > /etc/docker/daemon.json
 
           systemctl enable --now docker
+          systemctl enable --now crond
 
           sudo mkdir -p /usr/local/lib/docker/cli-plugins
 
@@ -552,198 +741,33 @@ Resources:
 
           # Set environment variables for the awideapp user
           cat > /etc/profile.d/awide-env.sh <<'EOF'
-          export S3_LOGS_BUCKET_NAME=${LogsBucket}
-          export S3_LOGS_BUCKET_ARN=${LogsBucket.Arn}
-          export AWS_REGION=${AWS::Region}
+          export S3_LOGS_BUCKET_NAME=''
+          export S3_LOGS_BUCKET_ARN=''
+          export AWIDE_PRIVATE_DNS=''
           EOF
 
+
+
           chmod +x /etc/profile.d/awide-env.sh
-          bash /etc/profile.d/awide-env.sh || true
+          source /etc/profile.d/awide-env.sh || true
+
+          mkdir -p /etc/yum.repos.d
+          cat >/etc/yum.repos.d/awidelabs.repo <<EOL
+          [awidelabs]
+          name=awidelabs
+          baseurl=https://nexus.awide.tech/repository/yum-packages
+          enabled=1
+          gpgcheck=1
+          gpgkey=https://nexus.awide.tech/repository/awidelabs-raw/awide.pub.asc
+          repo_gpgcheck=0
+          priority=1
+          deltarpm=0
+          EOL
 
       Tags:
         - Key: Name
           Value: !Sub "AWIDE-EC2-Instance-${AWS::StackName}"
 
-  RDSMonitoringRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: monitoring.rds.amazonaws.com
-            Action: sts:AssumeRole
-      Path: "/"
-      # Attach the AWS managed policy that grants the permissions RDS needs to publish OS metrics to CloudWatch Logs
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
-
-  MonitoredDBInstance:
-    Type: AWS::RDS::DBInstance
-    DependsOn: CloudWatchLogGroup
-    DeletionPolicy: Delete
-    Properties:
-      DBInstanceIdentifier: !Sub "${AWS::StackName}-postgresql"
-      AllocatedStorage: 10
-      DBInstanceClass: !Ref DBInstanceClass
-      Engine: postgres
-      EngineVersion: "17.4"
-      DBSubnetGroupName: !Ref DBSubnetGroup
-      DBName: elephantdb
-      BackupRetentionPeriod: 0
-      MonitoringInterval: 60
-      MonitoringRoleArn: !GetAtt RDSMonitoringRole.Arn
-      VPCSecurityGroups:
-        - !Ref VpcSecurityGroup
-      Port: 5432
-      MasterUsername: !Ref DBUsername
-      MasterUserPassword: !Ref DBPassword
-      EnableIAMDatabaseAuthentication: true
-      EnableCloudwatchLogsExports:
-        - postgresql
-      DBParameterGroupName: !Ref DBParameterGroup
-
-  DBParameterGroup:
-    Type: AWS::RDS::DBParameterGroup
-    DeletionPolicy: Delete
-    Properties:
-      DBParameterGroupName: !Sub "${AWS::StackName}-pg-params"
-      Description: PostgreSQL parameter group for enhanced logging
-      Family: postgres17
-      Parameters:
-        log_statement: "all"
-        log_min_duration_statement: "1000"
-        log_connections: "1"
-        log_disconnections: "1"
-        log_duration: "1"
-        log_hostname: "1"
-        log_line_prefix: "%t:%r:%u@%d:[%p]:"
-        log_error_verbosity: "default"
-      Tags:
-        - Key: Name
-          Value: !Sub ${AWS::StackName}-postgresql-174-db-params
-
-  DBSubnetGroup:
-    Type: AWS::RDS::DBSubnetGroup
-    Properties:
-      DBSubnetGroupName: !Sub "${AWS::StackName}-db-subnet-group"
-      DBSubnetGroupDescription: Subnet group for RDS instance
-      SubnetIds:
-        - !Ref SubnetA
-        - !Ref SubnetB
-        - !Ref SubnetC
-      Tags:
-        - Key: Name
-          Value: !Sub ${AWS::StackName}-db-subnet-group
-
-  # CloudWatch Log Group for RDS PostgreSQL logs
-  CloudWatchLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/rds/instance/${AWS::StackName}-postgresql/postgresql"
-      RetentionInDays: 3
-
-  # Logs to Firehose
-  ## S3 Bucket for Logs
-  LogsBucket:
-    Type: AWS::S3::Bucket
-    DeletionPolicy: Delete
-    Properties:
-      BucketName: !Sub "${AWS::StackName}-logs-bucket-${AWS::AccountId}-${AWS::Region}"
-      VersioningConfiguration:
-        Status: Suspended
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      LifecycleConfiguration:
-        Rules:
-        - Id: "ExpireCurrentObjectsAfter1Day"
-          Status: "Enabled"
-          ExpirationInDays: 1
-        - Id: "ExpireOldVersionsAfter1Day"
-          Status: "Enabled"
-          NoncurrentVersionExpirationInDays: 1
-        - Id: "AbortMultipartAfter1Day"
-          Status: "Enabled"
-          AbortIncompleteMultipartUpload:
-            DaysAfterInitiation: 1
-
-  # IAM Role for Kinesis Firehose
-  FirehoseIAMRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: firehose.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: FirehoseS3Policy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:PutObject
-                  - s3:PutObjectAcl
-                Resource: !Sub "${LogsBucket.Arn}/*"
-              - Effect: Allow
-                Action:
-                  - logs:PutLogEvents
-                  - logs:GetLogEvents
-                  - logs:DescribeLogStreams
-                  - logs:DescribeLogGroups
-                Resource: "*"
-
-  # IAM Role for CloudWatch Logs to assume and stream data to Firehose
-  CloudWatchToFirehoseRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: logs.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: CloudWatchToFirehosePolicy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - firehose:PutRecord
-                  - firehose:PutRecordBatch
-                Resource: !Sub "arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${FirehoseDeliveryStream}"
-
-  # Kinesis Firehose Delivery Stream
-  FirehoseDeliveryStream:
-    Type: AWS::KinesisFirehose::DeliveryStream
-    Properties:
-      ExtendedS3DestinationConfiguration:
-        BucketARN: !GetAtt LogsBucket.Arn
-        RoleARN: !GetAtt FirehoseIAMRole.Arn
-        Prefix: !Sub "${AWS::StackName}-postgresql/${MonitoredDBInstance.Port}/"
-        FileExtension: .gz
-        BufferingHints:
-          IntervalInSeconds: 60
-          SizeInMBs: 1
-        CompressionFormat: UNCOMPRESSED
-
-  # CloudWatch Logs Subscription Filter to send logs to Firehose
-  CloudWatchLogsSubscriptionFilter:
-    Type: AWS::Logs::SubscriptionFilter
-    Properties:
-      LogGroupName: !Ref CloudWatchLogGroup
-      FilterPattern: "" # Sends all logs; adjust this to filter specific logs
-      DestinationArn: !Sub "arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${FirehoseDeliveryStream}"
-      RoleArn: !GetAtt CloudWatchToFirehoseRole.Arn
 
 Outputs:
   EC2Hostname:
@@ -757,14 +781,6 @@ Outputs:
   EC2PublicIP:
     Description: EC2 Public IP (for SSH)
     Value: !GetAtt EC2Instance.PublicIp
-
-  RDSAddress:
-    Description: RDS Endpoint address
-    Value: !GetAtt MonitoredDBInstance.Endpoint.Address
-
-  RDSPort:
-    Description: RDS Port
-    Value: !GetAtt MonitoredDBInstance.Endpoint.Port
 
   IAMRoleArn:
     Description: IAM Role ARN for EC2
