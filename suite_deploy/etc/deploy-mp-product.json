@@ -56,7 +56,12 @@
                 "ec2:RunInstances",
                 "route53:GetHostedZone",
                 "route53:ChangeResourceRecordSets",
-                "ec2:DeleteRoute"
+                "ec2:DeleteRoute",
+                "ec2:CreateDhcpOptions",
+                "ec2:DescribeDhcpOptions",
+                "iam:GetRole",
+                "ec2:AssociateDhcpOptions",
+                "ec2:CreateDhcpOptions "
             ],
             "Resource": "*"
         },
@@ -64,16 +69,6 @@
             "Effect": "Allow",
             "Action": "iam:PassRole",
             "Resource": "arn:aws:iam::939462519505:role/*",
-            "Condition": {
-                "StringEquals": {
-                    "iam:PassedToService": "ec2.amazonaws.com"
-                }
-            }
-        },
-        {
-            "Effect": "Allow",
-            "Action": "iam:PassRole",
-            "Resource": "arn:aws:iam::770565308889:role/*",
             "Condition": {
                 "StringEquals": {
                     "iam:PassedToService": "ec2.amazonaws.com"

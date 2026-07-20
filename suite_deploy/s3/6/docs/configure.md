@@ -20,6 +20,9 @@ Table of Contents
 This guide provides step-by-step instructions to configure streaming of RDS PostgreSQL logs from Amazon CloudWatch to an S3 bucket using Amazon Data Firehose. This setup enables Awide PostgreSQL Suite to access RDS logs for extended analytics capabilities. The pipeline consists of three components:
 
 
+For the initial AWS Marketplace product launch and CloudFormation parameter configuration, use `marketplace-configuration.md` in this directory before starting the steps below.
+
+
 > Note:
 This guide assumes that the RDS PostgreSQL instance is already configured to publish logs to CloudWatch Logs. If not, please refer to the official AWS documentation to set up log publishing before proceeding with this guide, or refer to the additional documentation section below for more details.
 
