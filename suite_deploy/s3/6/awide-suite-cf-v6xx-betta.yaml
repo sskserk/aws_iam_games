@@ -28,19 +28,7 @@ Parameters:
     Type: AWS::EC2::Image::Id
     Default: ami-04d98b84268279947
     Description: Amazon Linux 2023
-  # DBInstanceClass:
-  #   Type: String
-  #   Default: db.t3.micro
-  #   Description: RDS instance class
-  # DBUsername:
-  #   Type: String
-  #   Default: elephant
-  #   Description: RDS master username
-  # DBPassword:
-  #   Type: String
-  #   NoEcho: true
-  #   Default: elephant123!
-  #   Description: RDS master password (NoEcho)
+
   InternalDomainName:
     Type: String
     Default: awide-suite.internal
@@ -56,7 +44,7 @@ Mappings:
       SuiteVersion: "6.4.1"
 
 Resources:
-  # VPC and Networking Resources
+  # Private network for all stack resources
   VPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -69,6 +57,7 @@ Resources:
         - Key: Purpose
           Value: "Awide Suite VPC"
 
+  # Lets the VPC reach the internet
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
@@ -78,12 +67,14 @@ Resources:
         - Key: Purpose
           Value: "Awide Suite Internet Gateway"
 
+  # Attaches the internet gateway to the VPC
   VPCGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
 
+  # Sets the private domain name for the VPC
   VpcDhcpOptions:
     Type: AWS::EC2::DHCPOptions
     Properties:
@@ -94,12 +85,14 @@ Resources:
         - Key: Name
           Value: !Sub ${AWS::StackName}-dhcp-options
 
+  # Attaches the DHCP options to the VPC
   VpcDhcpOptionsAssociation:
     Type: AWS::EC2::VPCDHCPOptionsAssociation
     Properties:
       VpcId: !Ref VPC
       DhcpOptionsId: !Ref VpcDhcpOptions
 
+  # Holds the routes for the subnets
   RouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -110,6 +103,7 @@ Resources:
         - Key: Purpose
           Value: "Awide Suite Route Table"
 
+  # Sends all outbound traffic to the internet
   DefaultRoute:
     Type: AWS::EC2::Route
     DependsOn: VPCGatewayAttachment
@@ -120,6 +114,7 @@ Resources:
 
 
   ## subnets
+  # First public subnet, in the first zone
   SubnetA:
     Type: AWS::EC2::Subnet
     Properties:
@@ -133,6 +128,7 @@ Resources:
         - Key: Purpose
           Value: "Awide Suite Subnet A"
 
+  # Second public subnet, in the second zone
   SubnetB:
     Type: AWS::EC2::Subnet
     Properties:
@@ -146,6 +142,7 @@ Resources:
         - Key: Purpose
           Value: "Awide Suite Subnet B"
 
+  # Third public subnet, in the third zone
   SubnetC:
     Type: AWS::EC2::Subnet
     Properties:
@@ -159,24 +156,28 @@ Resources:
         - Key: Purpose
           Value: "Awide Suite Subnet C"
 
+  # Links subnet A to the route table
   SubnetARouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref SubnetA
       RouteTableId: !Ref RouteTable
 
+  # Links subnet B to the route table
   SubnetBRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref SubnetB
       RouteTableId: !Ref RouteTable
 
+  # Links subnet C to the route table
   SubnetCRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref SubnetC
       RouteTableId: !Ref RouteTable
 
+  # Controls inbound and outbound traffic for the EC2 instance
   VpcSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -195,6 +196,7 @@ Resources:
           CidrIp: 0.0.0.0/0  
 
   # EC2
+  # Role the EC2 instance assumes to call AWS
   IAMRoleForEC2:
     Type: AWS::IAM::Role
     Properties:
@@ -218,6 +220,7 @@ Resources:
       Path: /
       Description: EC2 Role for CloudWatch and RDS metrics
 
+  # Grants CloudWatch, RDS, S3, and logs permissions
   EC2Policy:
     Type: AWS::IAM::Policy
     Properties:
@@ -258,6 +261,7 @@ Resources:
               - logs:GetLogEvents
             Resource: "arn:aws:logs:*:*:*"
 
+  # Lets the EC2 instance use the IAM role
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
@@ -265,6 +269,7 @@ Resources:
         - !Ref IAMRoleForEC2
       Path: /
 
+  # Private DNS zone for the app's internal domain
   PrivateHostedZone:
     Type: AWS::Route53::HostedZone
     Properties:
@@ -273,6 +278,7 @@ Resources:
         - VPCId: !Ref VPC
           VPCRegion: !Ref AWS::Region
 
+  # Gives the EC2 instance a private DNS name
   EC2DNSRecord:
     Type: AWS::Route53::RecordSet
     Properties:
@@ -283,6 +289,7 @@ Resources:
       ResourceRecords:
         - !GetAtt EC2Instance.PrivateIp  # Uses private IP
 
+  # The server that runs the Awide Suite app
   EC2Instance:
     Type: AWS::EC2::Instance
     
@@ -337,6 +344,7 @@ Resources:
         - Key: Name
           Value: !Sub "AWIDE-PG-SUITE-EC2-Instance-${AWS::StackName}"
 
+  # Lets RDS send OS metrics to CloudWatch
   RDSMonitoringRole:
     Type: AWS::IAM::Role
     Properties:
@@ -352,6 +360,7 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
 
+  # Turns on detailed logging for PostgreSQL
   DBParameterGroup:
     Type: AWS::RDS::DBParameterGroup
     DeletionPolicy: Delete
@@ -372,6 +381,7 @@ Resources:
         - Key: Name
           Value: !Sub ${AWS::StackName}-postgresql-174-db-params
 
+  # Lists which subnets RDS can use
   DBSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
     Properties:
@@ -385,15 +395,8 @@ Resources:
         - Key: Name
           Value: !Sub ${AWS::StackName}-db-subnet-group
 
-  # CloudWatch Log Group for RDS PostgreSQL logs
-  # CloudWatchLogGroup:
-  #   Type: AWS::Logs::LogGroup
-  #   Properties:
-  #     LogGroupName: !Sub "/aws/rds/instance/${AWS::StackName}-postgresql/postgresql"
-  #     RetentionInDays: 3
-
-  # Logs to Firehose
   ## S3 Bucket for Logs
+  # Stores application logs, private and short-lived
   LogsBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Delete
@@ -419,7 +422,7 @@ Resources:
           AbortIncompleteMultipartUpload:
             DaysAfterInitiation: 1
 
-  # IAM Role for Kinesis Firehose
+  # Lets Firehose write log records to S3
   FirehoseIAMRole:
     Type: AWS::IAM::Role
     Properties:
@@ -447,52 +450,6 @@ Resources:
                   - logs:DescribeLogStreams
                   - logs:DescribeLogGroups
                 Resource: "*"
-
-  # IAM Role for CloudWatch Logs to assume and stream data to Firehose
-  # CloudWatchToFirehoseRole:
-  #   Type: AWS::IAM::Role
-  #   Properties:
-  #     AssumeRolePolicyDocument:
-  #       Version: "2012-10-17"
-  #       Statement:
-  #         - Effect: Allow
-  #           Principal:
-  #             Service: logs.amazonaws.com
-  #           Action: sts:AssumeRole
-  #     Policies:
-  #       - PolicyName: CloudWatchToFirehosePolicy
-  #         PolicyDocument:
-  #           Version: "2012-10-17"
-  #           Statement:
-  #             - Effect: Allow
-  #               Action:
-  #                 - firehose:PutRecord
-  #                 - firehose:PutRecordBatch
-  #               Resource: !Sub "arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:/${FirehoseDeliveryStream}"
-
-  # Kinesis Firehose Delivery Stream
-  # FirehoseDeliveryStream:
-  #   Type: AWS::KinesisFirehose::DeliveryStream
-  #   Properties:
-  #     DeliveryStreamType: DirectPut
-  #     ExtendedS3DestinationConfiguration:
-  #       BucketARN: !GetAtt LogsBucket.Arn
-  #       RoleARN: !GetAtt FirehoseIAMRole.Arn
-  #       Prefix: !Sub "${AWS::StackName}-postgresql/${MonitoredDBInstance.Port}/"
-  #       FileExtension: .gz
-  #       BufferingHints:
-  #         IntervalInSeconds: 60
-  #         SizeInMBs: 1
-  #       CompressionFormat: UNCOMPRESSED
-
-  # CloudWatch Logs Subscription Filter to send logs to Firehose
-  # CloudWatchLogsSubscriptionFilter:
-  #   Type: AWS::Logs::SubscriptionFilter
-  #   Properties:
-  #     LogGroupName: !Ref CloudWatchLogGroup
-  #     FilterPattern: "" # Sends all logs; adjust this to filter specific logs
-  #     DestinationArn: !Sub "arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${FirehoseDeliveryStream}"
-  #     RoleArn: !GetAtt CloudWatchToFirehoseRole.Arn
 
 Outputs:
   AwideSuiteVersion:
@@ -522,19 +479,6 @@ Outputs:
   EC2User:
     Description: EC2 SSH Username
     Value: ubuntu
-
-  # EC2PublicIP:
-  #   Description: EC2 Public IP (for SSH)
-  #   Value: !GetAtt EC2Instance.PublicIp
-
-
-  # RDSAddress:
-  #   Description: RDS Endpoint address
-  #   Value: !GetAtt MonitoredDBInstance.Endpoint.Address
-
-  # RDSPort:
-  #   Description: RDS Port
-  #   Value: !GetAtt MonitoredDBInstance.Endpoint.Port
 
   IAMRoleArn:
     Description: IAM Role ARN for EC2

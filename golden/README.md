@@ -1,16 +1,15 @@
-aws --profile awmp s3 rm s3://awide-pg-suite-common --recursive
+# Golden Image Stack
 
-aws --profile awmp s3 cp ./suite_deploy/s3 s3://awide-pg-suite-common/common  --recursive --exclude ".DS_Store" 
+## What it is
 
-
-
-
-
-aws --profile awide cloudformation create-stack --stack-name staging-golden-1 --template-body file://stack.yaml --capabilities CAPABILITY_IAM
-
- aws --profile awide ssm start-session --target i-09744c6d0a5a39615
+This stack deploys one EC2 instance. It is used to build a "golden image".
 
 
- aws --profile awmp iam list-instance-profiles-for-role --role-name
- aws --profile awmp iam remove-role-from-instance-profile --instance-profile-name --role-name
-  aws --profile awmp iam delete-role --role-name 
+## Making the golden image
+
+1. Connect to the EC2 instance over SSH.
+2. Check that Docker, Docker Compose, and the app are installed and working.
+3. Do any extra setup you need.
+4. Stop the instance.
+5. Create an AMI from the instance. In the AWS Console: EC2 > Instances > select the instance > Actions > Image and templates > Create image.
+6. This new AMI is your golden image. Use it to launch new instances.
